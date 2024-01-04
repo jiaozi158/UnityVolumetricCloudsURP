@@ -14,6 +14,10 @@ Setup
 
  ![AddVolumeOverride](./Images/Settings/URP_VolumeOverride_VolumetricClouds.jpg)
 
+- Click **Show Additional Properties** to show hidden settings.
+
+ ![AdditionalProperties](./Images/Settings/URP_VolumeOverride_AdditionalProperties.jpg)
+
 - Adjust the settings in URP Volume and use different Volume types (global and local) to control volumetric clouds if needed.
 
 - For local volumetric clouds, increase the far plane of **camera** or **reflection probe** to render distant clouds.
