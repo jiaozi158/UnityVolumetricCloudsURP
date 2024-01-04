@@ -32,7 +32,8 @@ Requirements
  
 Reminders
 ------------
-- It is suggested to enable TAA rather than using MSAA though both are supported.
+- It is suggested to enable **TAA** rather than using **MSAA** though both are supported.
+- It is suggested to set the HDR precision to **64 Bits** in the active URP asset.
 - Some settings are still WIP, such as **Wind**, **Custom Cloud Map** overrides.
 - Orthographic camera is not supported.
 - Clouds shadowmap is not supported.
