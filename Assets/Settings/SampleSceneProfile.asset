@@ -121,13 +121,13 @@ MonoBehaviour:
     m_Value: 1
   localClouds:
     m_OverrideState: 1
-    m_Value: 0
+    m_Value: 1
   m_CloudPreset:
     m_OverrideState: 1
     m_Value: 4
   densityMultiplier:
     m_OverrideState: 1
-    m_Value: 0.2
+    m_Value: 0.316
   densityCurve:
     m_OverrideState: 1
     m_Value:
@@ -329,11 +329,29 @@ MonoBehaviour:
   earthCurvature:
     m_OverrideState: 0
     m_Value: 0
+  globalOrientation:
+    m_OverrideState: 0
+    m_Value: 0
+  globalSpeed:
+    m_OverrideState: 0
+    m_Value: 0
+  shapeSpeedMultiplier:
+    m_OverrideState: 0
+    m_Value: 1
+  erosionSpeedMultiplier:
+    m_OverrideState: 0
+    m_Value: 0.25
   altitudeDistortion:
+    m_OverrideState: 1
+    m_Value: 0
+  verticalShapeWindSpeed:
+    m_OverrideState: 0
+    m_Value: 0
+  verticalErosionWindSpeed:
     m_OverrideState: 0
     m_Value: 0
   ambientLightProbeDimmer:
-    m_OverrideState: 1
+    m_OverrideState: 0
     m_Value: 1
   sunLightDimmer:
     m_OverrideState: 0
@@ -357,17 +375,17 @@ MonoBehaviour:
     m_OverrideState: 1
     m_Value: 32
   numLightSteps:
-    m_OverrideState: 1
-    m_Value: 2
+    m_OverrideState: 0
+    m_Value: 1
   fadeInMode:
     m_OverrideState: 1
-    m_Value: 0
+    m_Value: 1
   fadeInStart:
     m_OverrideState: 0
     m_Value: 0
   fadeInDistance:
-    m_OverrideState: 0
-    m_Value: 5000
+    m_OverrideState: 1
+    m_Value: 500
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

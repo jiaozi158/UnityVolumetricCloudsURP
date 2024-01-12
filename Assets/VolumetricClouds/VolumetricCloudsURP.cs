@@ -13,20 +13,26 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
     [Header("Setup")]
     [Tooltip("The material of volumetric clouds shader.")]
     [SerializeField] private Material material;
-    [Tooltip("Enable this to render volumetric clouds in Rendering Debugger view. This is disabled by default to avoid affecting the individual lighting previews.")]
+    [Tooltip("Enable this to render volumetric clouds in Rendering Debugger view. \nThis is disabled by default to avoid affecting the individual lighting previews.")]
     [SerializeField] private bool renderingDebugger = false;
 
     [Header("Performance")]
-    [Range(0.5f, 1.0f), Tooltip("The resolution scale for volumetric clouds rendering.")]
-    [SerializeField] private float resolutionScale = 1.0f;
-    [Tooltip("Specifies if URP renders volumetric clouds in both real-time and baked reflection probes. Volumetric clouds in real-time reflection probes may reduce performace.")]
+    [Tooltip("Specifies if URP renders volumetric clouds in both real-time and baked reflection probes. \nVolumetric clouds in real-time reflection probes may reduce performace.")]
     [SerializeField] private bool reflectionProbe = false;
-    [Tooltip("Specifies the preferred texture render mode for volumetric clouds. The Copy Texture mode should be more performant.")]
+    [Range(0.5f, 1.0f), Tooltip("The resolution scale for volumetric clouds rendering.")]
+    [SerializeField] private float resolutionScale = 0.5f;
+    [Tooltip("Select the method to use for upscaling volumetric clouds.")]
+    [SerializeField] private CloudsUpscaleMode upscaleMode = CloudsUpscaleMode.Bilinear;
+    [Tooltip("Specifies the preferred texture render mode for volumetric clouds. \nThe Copy Texture mode should be more performant.")]
     [SerializeField] private CloudsRenderMode preferredRenderMode = CloudsRenderMode.CopyTexture;
 
     [Header("Lighting")]
     [Tooltip("Specifies the volumetric clouds ambient probe update frequency.")]
     [SerializeField] private CloudsAmbientMode ambientProbe = CloudsAmbientMode.Dynamic;
+
+    [Header("Wind")]
+    [Tooltip("Enable to reset the wind offsets to their initial states when start playing.")]
+    [SerializeField] private bool resetOnStart = true;
 
     private const string shaderName = "Hidden/Sky/VolumetricClouds";
     private VolumetricCloudsPass volumetricCloudsPass;
@@ -66,12 +72,12 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
     /// Gets or sets the resolution scale for volumetric clouds rendering.
     /// </summary>
     /// <value>
-    /// The resolution scale for volumetric clouds rendering, ranging from 0.5 to 1.0.
+    /// The resolution scale for volumetric clouds rendering, ranging from 0.25 to 1.0.
     /// </value>
     public float ResolutionScale
     {
         get { return resolutionScale; }
-        set { resolutionScale = Mathf.Clamp(value, 0.5f, 1.0f); }
+        set { resolutionScale = Mathf.Clamp(value, 0.25f, 1.0f); }
     }
 
     /// <summary>
@@ -100,7 +106,30 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         get { return ambientProbe; }
         set { ambientProbe = value; }
     }
-    
+
+    /// <summary>
+    /// Gets or sets the method used for upscaling volumetric clouds.
+    /// </summary>
+    /// <value>
+    /// The method to use for upscaling volumetric clouds.
+    /// </value>
+    public CloudsUpscaleMode UpscaleMode
+    {
+        get { return upscaleMode; }
+        set { upscaleMode = value; }
+    }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to reset wind offsets for volumetric clouds when entering playmode.
+    /// </summary>
+    /// <value>
+    /// <c>true</c> if resetting wind offsets when entering playmode; otherwise, <c>false</c>.
+    /// </value>
+    public bool ResetWindOnStart
+    {
+        get { return resetOnStart; }
+        set { resetOnStart = value; }
+    }
 
     public enum CloudsRenderMode
     {
@@ -118,6 +147,15 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
         [Tooltip("Use a fast dynamic ambient probe for volumetric clouds rendering.")]
         Dynamic
+    }
+
+    public enum CloudsUpscaleMode
+    {
+        [Tooltip("Use simple but fast filtering for volumetric clouds upscale.")]
+        Bilinear,
+
+        [Tooltip("Use more computationally expensive filtering for volumetric clouds upscale. \nThis blurs the cloud details but reduces the noise that may appear at lower clouds resolutions.")]
+        Bilateral
     }
 
     public override void Create()
@@ -147,6 +185,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         {
             // Update every frame to support runtime changes to these properties.
             volumetricCloudsPass.resolutionScale = resolutionScale;
+            volumetricCloudsPass.upscaleMode = upscaleMode;
             volumetricCloudsPass.dynamicAmbientProbe = ambientProbe == CloudsAmbientMode.Dynamic;
         }
 
@@ -189,6 +228,8 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             bool dynamicAmbientProbe = ambientProbe == CloudsAmbientMode.Dynamic;
             volumetricCloudsPass.cloudsVolume = cloudsVolume;
             volumetricCloudsPass.dynamicAmbientProbe = dynamicAmbientProbe;
+            volumetricCloudsPass.renderMode = preferredRenderMode;
+            volumetricCloudsPass.resetWindOnStart = resetOnStart;
             // If the probe is at the origin, we assume it's a global probe.
             // We disable local clouds in that case because the far clipping plane of a global probe is only 10.
             volumetricCloudsPass.isGlobalProbeCamera = isProbeCamera && renderingData.cameraData.camera.transform.position == Vector3.zero;
@@ -209,9 +250,12 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
     public class VolumetricCloudsPass : ScriptableRenderPass
     {
         public VolumetricClouds cloudsVolume;
+        public CloudsRenderMode renderMode;
         public float resolutionScale;
+        public CloudsUpscaleMode upscaleMode;
         public bool dynamicAmbientProbe;
         public bool isGlobalProbeCamera;
+        public bool resetWindOnStart;
 
         private bool denoiseClouds;
 
@@ -224,9 +268,17 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         
         private static readonly int numPrimarySteps = Shader.PropertyToID("_NumPrimarySteps");
         private static readonly int numLightSteps = Shader.PropertyToID("_NumLightSteps");
+        private static readonly int maxStepSize = Shader.PropertyToID("_MaxStepSize");
         private static readonly int highestCloudAltitude = Shader.PropertyToID("_HighestCloudAltitude");
         private static readonly int lowestCloudAltitude = Shader.PropertyToID("_LowestCloudAltitude");
         private static readonly int shapeNoiseOffset = Shader.PropertyToID("_ShapeNoiseOffset");
+        private static readonly int verticalShapeNoiseOffset = Shader.PropertyToID("_VerticalShapeNoiseOffset");
+        private static readonly int globalOrientation = Shader.PropertyToID("_WindDirection");
+        private static readonly int globalSpeed = Shader.PropertyToID("_WindVector");
+        private static readonly int verticalShapeDisplacement = Shader.PropertyToID("_VerticalShapeWindDisplacement");
+        private static readonly int verticalErosionDisplacement = Shader.PropertyToID("_VerticalErosionWindDisplacement");
+        private static readonly int shapeSpeedMultiplier = Shader.PropertyToID("_MediumWindSpeed");
+        private static readonly int erosionSpeedMultiplier = Shader.PropertyToID("_SmallWindSpeed");
         private static readonly int altitudeDistortion = Shader.PropertyToID("_AltitudeDistortion");
         private static readonly int densityMultiplier = Shader.PropertyToID("_DensityMultiplier");
         private static readonly int powderEffectIntensity = Shader.PropertyToID("_PowderEffectIntensity");
@@ -245,6 +297,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         private static readonly int sunLightDimmer = Shader.PropertyToID("_SunLightDimmer");
         private static readonly int earthRadius = Shader.PropertyToID("_EarthRadius");
         private static readonly int accumulationFactor = Shader.PropertyToID("_AccumulationFactor");
+        //private static readonly int normalizationFactor = Shader.PropertyToID("_NormalizationFactor");
         private static readonly int cloudsCurveLut = Shader.PropertyToID("_CloudCurveTexture");
 
         private static readonly string localClouds = "_LOCAL_VOLUMETRIC_CLOUDS";
@@ -258,7 +311,14 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         private const float earthRad = 6378100.0f;
         private const int customLutMapResolution = 64;
 
-        private void UpdateMaterialProperties()
+        // Wind offsets
+        private bool prevIsPlaying;
+        private float prevTotalTime = -1.0f;
+        private float verticalShapeOffset = 0.0f;
+        private float verticalErosionOffset = 0.0f;
+        private Vector2 windVector = Vector2.zero;
+
+        private void UpdateMaterialProperties(Camera camera)
         {
             if (cloudsVolume.localClouds.value && (!isGlobalProbeCamera)) { cloudsMaterial.EnableKeyword(localClouds); }
             else { cloudsMaterial.DisableKeyword(localClouds); }
@@ -266,7 +326,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             if (cloudsVolume.microErosion.value && cloudsVolume.microErosionFactor.value > 0.0f) { cloudsMaterial.EnableKeyword(microErosion); }
             else { cloudsMaterial.DisableKeyword(microErosion); }
 
-            if (resolutionScale < 1.0f) { cloudsMaterial.EnableKeyword(lowResClouds); }
+            if (resolutionScale < 1.0f && upscaleMode == CloudsUpscaleMode.Bilateral) { cloudsMaterial.EnableKeyword(lowResClouds); }
             else { cloudsMaterial.DisableKeyword(lowResClouds); }
 
             if (dynamicAmbientProbe) { cloudsMaterial.EnableKeyword(cloudsAmbientProbe); }
@@ -274,12 +334,60 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
             cloudsMaterial.SetFloat(numPrimarySteps, cloudsVolume.numPrimarySteps.value);
             cloudsMaterial.SetFloat(numLightSteps, cloudsVolume.numLightSteps.value);
-            cloudsMaterial.SetFloat(highestCloudAltitude, cloudsVolume.bottomAltitude.value + cloudsVolume.altitudeRange.value);
-            cloudsMaterial.SetFloat(lowestCloudAltitude, cloudsVolume.bottomAltitude.value);
+            cloudsMaterial.SetFloat(maxStepSize, cloudsVolume.altitudeRange.value / 8.0f);
+            float actualEarthRad = Mathf.Lerp(1.0f, 0.025f, cloudsVolume.earthCurvature.value) * earthRad;
+            float bottomAltitude = cloudsVolume.bottomAltitude.value + actualEarthRad;
+            float highestAltitude = bottomAltitude + cloudsVolume.altitudeRange.value;
+            cloudsMaterial.SetFloat(highestCloudAltitude, highestAltitude);
+            cloudsMaterial.SetFloat(lowestCloudAltitude, bottomAltitude);
+            cloudsMaterial.SetVector(shapeNoiseOffset, new Vector4(cloudsVolume.shapeOffset.value.x, cloudsVolume.shapeOffset.value.z, 0.0f, 0.0f));
+            cloudsMaterial.SetFloat(verticalShapeNoiseOffset, cloudsVolume.shapeOffset.value.y);
 
-            cloudsMaterial.SetVector(shapeNoiseOffset, new Vector4(cloudsVolume.shapeOffset.value.x, cloudsVolume.shapeOffset.value.y, cloudsVolume.shapeOffset.value.z, 0.0f));
-            cloudsMaterial.SetFloat(altitudeDistortion, cloudsVolume.altitudeDistortion.value);
-            cloudsMaterial.SetFloat(densityMultiplier, cloudsVolume.densityMultiplier.value);
+            // Wind animation
+            float totalTime = Application.isPlaying ? Time.time : Time.realtimeSinceStartup;
+            float deltaTime = totalTime - prevTotalTime;
+            if (prevTotalTime == -1.0f)
+                deltaTime = 0.0f;
+
+        #if UNITY_EDITOR
+            if (UnityEditor.EditorApplication.isPaused)
+                deltaTime = 0.0f;
+        #endif
+
+            // Conversion from km/h to m/s is the 0.277778f factor
+            // We apply a minus to see something moving in the right direction
+            deltaTime *= -0.277778f;
+
+            float theta = cloudsVolume.globalOrientation.value / 180.0f * Mathf.PI;
+            Vector2 windDirection = new Vector2(Mathf.Cos(theta), Mathf.Sin(theta));
+            
+            if (resetWindOnStart && prevIsPlaying != Application.isPlaying)
+            {
+                windVector = Vector2.zero;
+                verticalShapeOffset = 0.0f;
+                verticalErosionOffset = 0.0f;
+            }
+            else
+            {
+                windVector += deltaTime * cloudsVolume.globalSpeed.value * windDirection;
+                verticalShapeOffset += deltaTime * cloudsVolume.verticalShapeWindSpeed.value;
+                verticalErosionOffset += deltaTime * cloudsVolume.erosionSpeedMultiplier.value;
+            }
+
+            // Update previous values
+            prevTotalTime = totalTime;
+            prevIsPlaying = Application.isPlaying;
+
+            // We apply a minus to see something moving in the right direction
+            cloudsMaterial.SetVector(globalOrientation, new Vector4(-windDirection.x, -windDirection.y, 0.0f, 0.0f));
+            cloudsMaterial.SetVector(globalSpeed, windVector);
+            cloudsMaterial.SetFloat(shapeSpeedMultiplier, cloudsVolume.shapeSpeedMultiplier.value);
+            cloudsMaterial.SetFloat(erosionSpeedMultiplier, cloudsVolume.erosionSpeedMultiplier.value);
+            cloudsMaterial.SetFloat(altitudeDistortion, cloudsVolume.altitudeDistortion.value * 0.25f);
+            cloudsMaterial.SetFloat(verticalShapeDisplacement, verticalShapeOffset);
+            cloudsMaterial.SetFloat(verticalErosionDisplacement, verticalErosionOffset);
+
+            cloudsMaterial.SetFloat(densityMultiplier, cloudsVolume.densityMultiplier.value * cloudsVolume.densityMultiplier.value * 2.0f);
             cloudsMaterial.SetFloat(powderEffectIntensity, cloudsVolume.powderEffectIntensity.value);
             cloudsMaterial.SetFloat(shapeScale, cloudsVolume.shapeScale.value);
             cloudsMaterial.SetFloat(shapeFactor, cloudsVolume.shapeFactor.value);
@@ -290,25 +398,29 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             cloudsMaterial.SetFloat(microErosionFactor, cloudsVolume.microErosionFactor.value);
 
             bool autoFadeIn = cloudsVolume.fadeInMode.value == VolumetricClouds.CloudFadeInMode.Automatic;
-            cloudsMaterial.SetFloat(fadeInStart, autoFadeIn ? 0.0f : cloudsVolume.fadeInStart.value);
-            cloudsMaterial.SetFloat(fadeInDistance, autoFadeIn ? 5000.0f : cloudsVolume.fadeInDistance.value);
-            cloudsMaterial.SetFloat(multiScattering, cloudsVolume.multiScattering.value);
-            cloudsMaterial.SetColor(scatteringTint, cloudsVolume.scatteringTint.value);
+            cloudsMaterial.SetFloat(fadeInStart, autoFadeIn ? Mathf.Max(cloudsVolume.altitudeRange.value * 0.2f, camera.nearClipPlane) : Mathf.Max(cloudsVolume.fadeInStart.value, camera.nearClipPlane));
+            cloudsMaterial.SetFloat(fadeInDistance, autoFadeIn ? cloudsVolume.altitudeRange.value * 0.3f : cloudsVolume.fadeInDistance.value);
+            cloudsMaterial.SetFloat(multiScattering, 1.0f - cloudsVolume.multiScattering.value * 0.95f);
+            cloudsMaterial.SetColor(scatteringTint, Color.white - cloudsVolume.scatteringTint.value * 0.75f);
             cloudsMaterial.SetFloat(ambientProbeDimmer, cloudsVolume.ambientLightProbeDimmer.value);
             cloudsMaterial.SetFloat(sunLightDimmer, cloudsVolume.sunLightDimmer.value);
-            cloudsMaterial.SetFloat(earthRadius, Mathf.Lerp(1.0f, 0.025f, cloudsVolume.earthCurvature.value) * earthRad);
+            cloudsMaterial.SetFloat(earthRadius, actualEarthRad);
             cloudsMaterial.SetFloat(accumulationFactor, cloudsVolume.temporalAccumulationFactor.value);
+
+            // Custom cloud map is not supported yet.
+            //float lowerCloudRadius = (bottomAltitude + highestAltitude) * 0.5f - actualEarthRad;
+            //cloudsMaterial.SetFloat(normalizationFactor, Mathf.Sqrt((6378100.0f + lowerCloudRadius) * (6378100.0f + lowerCloudRadius) - 6378100.0f * actualEarthRad));
 
             PrepareCustomLutData(cloudsVolume);
         }
 
-        private void UpdateClouds()
+        private void UpdateClouds(Camera camera)
         {
             // Update preset values
             VolumetricClouds.CloudPresets cloudPreset = cloudsVolume.cloudPreset;
             cloudsVolume.cloudPreset = cloudPreset;
 
-            UpdateMaterialProperties();
+            UpdateMaterialProperties(camera);
             denoiseClouds = cloudsVolume.temporalAccumulationFactor.value >= 0.01f;
         }
 
@@ -375,11 +487,11 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             desc.msaaSamples = 1;
             desc.useMipMap = false;
             desc.depthBufferBits = 0;
+            RenderingUtils.ReAllocateIfNeeded(ref historyHandle, desc, FilterMode.Point, TextureWrapMode.Clamp, name: "_VolumetricCloudsHistoryTexture"); // lighting.rgb only
+
             desc.colorFormat = RenderTextureFormat.ARGBHalf; // lighting.rgb + transmittance.a
-
             RenderingUtils.ReAllocateIfNeeded(ref accumulateHandle, desc, FilterMode.Point, TextureWrapMode.Clamp, name: "_VolumetricCloudsAccumulationTexture");
-            RenderingUtils.ReAllocateIfNeeded(ref historyHandle, desc, FilterMode.Point, TextureWrapMode.Clamp, name: "_VolumetricCloudsHistoryTexture");
-
+            
             desc.width = (int)(desc.width * resolutionScale);
             desc.height = (int)(desc.height * resolutionScale);
             RenderingUtils.ReAllocateIfNeeded(ref cloudsHandle, desc, FilterMode.Bilinear, TextureWrapMode.Clamp, name: "_VolumetricCloudsColorTexture");
@@ -410,7 +522,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-            UpdateClouds();
+            UpdateClouds(renderingData.cameraData.camera);
 
             RTHandle colorHandle = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
@@ -423,17 +535,15 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 // Clouds Upscale & Combine
                 Blitter.BlitCameraTexture(cmd, colorHandle, colorHandle, cloudsMaterial, pass: 1);
 
-                // Prepare Temporal Reprojection (copy source buffer)
-                bool canCopy = colorHandle.rt.format == accumulateHandle.rt.format && colorHandle.rt.antiAliasing == 1 && fastCopy;
-                if (canCopy && denoiseClouds) { cmd.CopyTexture(colorHandle, accumulateHandle); }
-                else if (denoiseClouds) { Blitter.BlitCameraTexture(cmd, colorHandle, accumulateHandle, cloudsMaterial, pass: 2); }
+                // Prepare Temporal Reprojection (copy source buffer: colorHandle.rgb + cloudsHandle.a)
+                if (denoiseClouds) { Blitter.BlitCameraTexture(cmd, colorHandle, accumulateHandle, cloudsMaterial, pass: 2); }
 
                 // Temporal Reprojection
                 if (denoiseClouds) { Blitter.BlitCameraTexture(cmd, accumulateHandle, colorHandle, cloudsMaterial, pass: 3); }
 
                 // Update history texture for temporal reprojection
-                canCopy = colorHandle.rt.format == historyHandle.rt.format && colorHandle.rt.antiAliasing == 1 && fastCopy;
-                if (canCopy && denoiseClouds) { cmd.CopyTexture(colorHandle, historyHandle); }
+                bool canCopy = colorHandle.rt.format == historyHandle.rt.format && colorHandle.rt.antiAliasing == 1 && fastCopy;
+                if (canCopy && denoiseClouds && renderMode == CloudsRenderMode.CopyTexture) { cmd.CopyTexture(colorHandle, historyHandle); }
                 else if (denoiseClouds) { Blitter.BlitCameraTexture(cmd, colorHandle, historyHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, cloudsMaterial, pass: 2); }
             }
             context.ExecuteCommandBuffer(cmd);

@@ -5,14 +5,22 @@ Shader "Hidden/Sky/VolumetricClouds"
         [HideInInspector][NoScaleOffset] _CloudLutTexture("Cloud LUT Texture", 2D) = "white" {}
         [HideInInspector][NoScaleOffset] _CloudCurveTexture("Cloud LUT Curve Texture", 2D) = "white" {}
         [NoScaleOffset] _ErosionNoise("Erosion Noise Texture", 3D) = "white" {}
-        [NoScaleOffset] _Worley32RGBA("Worley Noise Texture", 3D) = "white" {}
+        [NoScaleOffset] _Worley128RGBA("Worley Noise Texture", 3D) = "white" {}
         [HideInInspector] _Seed("Private: Random Seed", Float) = 0.0
         [HideInInspector] _VolumetricCloudsAmbientProbe("Ambient Probe", CUBE) = "grey" {}
         [HideInInspector] _NumPrimarySteps("Ray Steps", Float) = 32.0
         [HideInInspector] _NumLightSteps("Light Steps", Float) = 1.0
-        [HideInInspector] _HighestCloudAltitude("Light Steps", Float) = 3200.0
-        [HideInInspector] _LowestCloudAltitude("Light Steps", Float) = 1200.0
+        [HideInInspector] _MaxStepSize("Maximum Step Size", Float) = 250.0
+        [HideInInspector] _HighestCloudAltitude("Highest Cloud Altitude", Float) = 3200.0
+        [HideInInspector] _LowestCloudAltitude("Lowest Cloud Altitude", Float) = 1200.0
         [HideInInspector] _ShapeNoiseOffset("Shape Offset", Vector) = (0.0, 0.0, 0.0, 0.0)
+        [HideInInspector] _VerticalShapeNoiseOffset("Vertical Shape Offset", Float) = 0.0
+        [HideInInspector] _WindDirection("Wind Direction", Vector) = (0.0, 0.0, 0.0, 0.0)
+        [HideInInspector] _WindVector("Wind Vector", Vector) = (0.0, 0.0, 0.0, 0.0)
+        [HideInInspector] _VerticalShapeWindDisplacement("Vertical Shape Wind Speed", Float) = 0.0
+        [HideInInspector] _VerticalErosionWindDisplacement("Vertical Erosion Wind Speed", Float) = 0.0
+        [HideInInspector] _MediumWindSpeed("Shape Speed Multiplier", Float) = 0.0
+        [HideInInspector] _SmallWindSpeed("Erosion Speed Multiplier", Float) = 0.0
         [HideInInspector] _AltitudeDistortion("Altitude Distortion", Float) = 0.0
         [HideInInspector] _DensityMultiplier("Density Multiplier", Float) = 0.4
         [HideInInspector] _PowderEffectIntensity("Powder Effect Intensity", Float) = 0.25
@@ -30,6 +38,7 @@ Shader "Hidden/Sky/VolumetricClouds"
         [HideInInspector] _AmbientProbeDimmer("Ambient Light Probe Dimmer", Float) = 1.0
         [HideInInspector] _SunLightDimmer("Sun Light Dimmer", Float) = 1.0
         [HideInInspector] _EarthRadius("Earth Radius", Float) = 6378100.0
+        [HideInInspector] _NormalizationFactor("Normalization Factor", Float) = 0.7854
         [HideInInspector] _AccumulationFactor("Accumulation Factor", Float) = 0.95
     }
 
@@ -54,37 +63,10 @@ Shader "Hidden/Sky/VolumetricClouds"
 			#pragma fragment frag
 
             #pragma target 3.5
-
-            CBUFFER_START(UnityPerMaterial)
-            half _Seed;
-            half _NumPrimarySteps;
-            half _NumLightSteps;
-            half _HighestCloudAltitude;
-            half _LowestCloudAltitude;
-            half4 _ShapeNoiseOffset;
-            half _AltitudeDistortion;
-            half _DensityMultiplier;
-            half _PowderEffectIntensity;
-            half _ShapeScale;
-            half _ShapeFactor;
-            half _ErosionScale;
-            half _ErosionFactor;
-            half _ErosionOcclusion;
-            half _MicroErosionScale;
-            half _MicroErosionFactor;
-            half _FadeInStart;
-            half _FadeInDistance;
-            half _MultiScattering;
-            half4 _ScatteringTint;
-            half _AmbientProbeDimmer;
-            half _SunLightDimmer;
-            float _EarthRadius;
-            half _AccumulationFactor;
-            CBUFFER_END
             
             TEXTURE2D(_CloudLutTexture);
             TEXTURE2D(_CloudCurveTexture);
-            TEXTURE3D(_Worley32RGBA);
+            TEXTURE3D(_Worley128RGBA);
             TEXTURE3D(_ErosionNoise);
             TEXTURECUBE(_VolumetricCloudsAmbientProbe);
 
@@ -132,7 +114,8 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #ifdef _LOCAL_VOLUMETRIC_CLOUDS
                 float cloudDepth = rayHit.meanDistance;
-                cloudDepth = DecodeInfiniteDepth(cloudDepth, _ProjectionParams.y);
+                //cloudDepth = DecodeInfiniteDepth(cloudDepth, _ProjectionParams.y);
+                cloudDepth = min(DecodeInfiniteDepth(cloudDepth, _ProjectionParams.y), _ProjectionParams.z);
 
                 half3 viewDir = normalize(positionWS - GetCameraPositionWS());
                 float3 cloudPosWS = GetCameraPositionWS() + rayHit.meanDistance * invViewDirWS;
@@ -170,33 +153,6 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma target 3.5
 
-            CBUFFER_START(UnityPerMaterial)
-            half _Seed;
-            half _NumPrimarySteps;
-            half _NumLightSteps;
-            half _HighestCloudAltitude;
-            half _LowestCloudAltitude;
-            half4 _ShapeNoiseOffset;
-            half _AltitudeDistortion;
-            half _DensityMultiplier;
-            half _PowderEffectIntensity;
-            half _ShapeScale;
-            half _ShapeFactor;
-            half _ErosionScale;
-            half _ErosionFactor;
-            half _ErosionOcclusion;
-            half _MicroErosionScale;
-            half _MicroErosionFactor;
-            half _FadeInStart;
-            half _FadeInDistance;
-            half _MultiScattering;
-            half4 _ScatteringTint;
-            half _AmbientProbeDimmer;
-            half _SunLightDimmer;
-            float _EarthRadius;
-            half _AccumulationFactor;
-            CBUFFER_END
-
             TEXTURE2D(_VolumetricCloudsColorTexture);
             float4 _VolumetricCloudsColorTexture_TexelSize;
 
@@ -209,41 +165,7 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma multi_compile_local_fragment _ _LOW_RESOLUTION_CLOUDS
 
-            half GaussianWeight(half x, half sigma)
-            {
-                return exp(-0.5 * x * x * rcp(sigma * sigma));
-            }
-            
-            half4 BilateralUpscale(float2 screenUV)
-            {
-                half4 centerColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, screenUV, 0).rgba;
-
-                half4 resultColor = half4(0.0, 0.0, 0.0, 0.0);
-                half normalization = 0.0;
-
-                // Kernel size
-                const int kernelSize = 3;
-
-                for (int i = -kernelSize; i <= kernelSize; i++)
-                {
-                    for (int j = -kernelSize; j <= kernelSize; j++)
-                    {
-                        float2 offset = float2(i, j);
-                        half4 neighborColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, screenUV + offset * _VolumetricCloudsColorTexture_TexelSize.xy, 0).rgba;
-
-                        half spatialWeight = GaussianWeight(length(offset), 2.0);
-                        half intensityWeight = GaussianWeight(length(centerColor.rgba - neighborColor.rgba), 0.1);
-
-                        half totalWeight = spatialWeight * intensityWeight;
-
-                        resultColor += neighborColor * totalWeight;
-                        normalization += totalWeight;
-                    }
-                }
-                resultColor *= rcp(normalization);
-
-                return resultColor;
-            }
+            #include "./VolumetricCloudsUpscale.hlsl"
             
             half4 frag(Varyings input) : SV_Target
             {
@@ -278,44 +200,28 @@ Shader "Hidden/Sky/VolumetricClouds"
 			#pragma fragment frag
 
             #pragma target 3.5
-
-            CBUFFER_START(UnityPerMaterial)
-            half _Seed;
-            half _NumPrimarySteps;
-            half _NumLightSteps;
-            half _HighestCloudAltitude;
-            half _LowestCloudAltitude;
-            half4 _ShapeNoiseOffset;
-            half _AltitudeDistortion;
-            half _DensityMultiplier;
-            half _PowderEffectIntensity;
-            half _ShapeScale;
-            half _ShapeFactor;
-            half _ErosionScale;
-            half _ErosionFactor;
-            half _ErosionOcclusion;
-            half _MicroErosionScale;
-            half _MicroErosionFactor;
-            half _FadeInStart;
-            half _FadeInDistance;
-            half _MultiScattering;
-            half4 _ScatteringTint;
-            half _AmbientProbeDimmer;
-            half _SunLightDimmer;
-            float _EarthRadius;
-            half _AccumulationFactor;
-            CBUFFER_END
             
             TEXTURE2D(_VolumetricCloudsColorTexture);
-            SAMPLER(s_point_clamp_sampler);
+            float4 _VolumetricCloudsColorTexture_TexelSize;
+
+            SAMPLER(s_linear_clamp_sampler);
+
+            #pragma multi_compile_local_fragment _ _LOW_RESOLUTION_CLOUDS
+
+            #include "./VolumetricCloudsUpscale.hlsl"
 
             half4 frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 float2 screenUV = input.texcoord;
 
-                half3 sceneColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, s_point_clamp_sampler, screenUV, 0).rgb;
-                half transmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_point_clamp_sampler, screenUV, 0).a;
+                half3 sceneColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, s_linear_clamp_sampler, screenUV, 0).rgb;
+
+            #ifdef _LOW_RESOLUTION_CLOUDS
+                half transmittance = BilateralUpscaleTransmittance(screenUV);
+            #else
+                half transmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, screenUV, 0).a;
+            #endif
 
                 // The camera color buffer (_BlitTexture) may not have an alpha channel (32 Bits)
                 // We use a custom blit shader instead
@@ -343,34 +249,9 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma target 3.5
 
-            #pragma multi_compile_local_fragment _ _LOCAL_VOLUMETRIC_CLOUDS
+            #include "./VolumetricCloudsDefs.hlsl"
 
-            CBUFFER_START(UnityPerMaterial)
-            half _Seed;
-            half _NumPrimarySteps;
-            half _NumLightSteps;
-            half _HighestCloudAltitude;
-            half _LowestCloudAltitude;
-            half4 _ShapeNoiseOffset;
-            half _AltitudeDistortion;
-            half _DensityMultiplier;
-            half _PowderEffectIntensity;
-            half _ShapeScale;
-            half _ShapeFactor;
-            half _ErosionScale;
-            half _ErosionFactor;
-            half _ErosionOcclusion;
-            half _MicroErosionScale;
-            half _MicroErosionFactor;
-            half _FadeInStart;
-            half _FadeInDistance;
-            half _MultiScattering;
-            half4 _ScatteringTint;
-            half _AmbientProbeDimmer;
-            half _SunLightDimmer;
-            float _EarthRadius;
-            half _AccumulationFactor;
-            CBUFFER_END
+            #pragma multi_compile_local_fragment _ _LOCAL_VOLUMETRIC_CLOUDS
 
             TEXTURE2D(_VolumetricCloudsColorTexture);
             TEXTURE2D(_VolumetricCloudsHistoryTexture);
@@ -430,7 +311,7 @@ Shader "Hidden/Sky/VolumetricClouds"
                 float depth = UNITY_RAW_FAR_CLIP_VALUE;
             #endif
 
-                half3 cloudsColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, s_point_clamp_sampler, screenUV, 0).rgb;
+                half4 cloudsColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, s_point_clamp_sampler, screenUV, 0).rgba;
 
                 // Color Variance
                 half3 colorCenter = cloudsColor.xyz;
@@ -466,7 +347,7 @@ Shader "Hidden/Sky/VolumetricClouds"
                 // Re-projected color from last frame.
                 half3 prevColor = SAMPLE_TEXTURE2D_LOD(_VolumetricCloudsHistoryTexture, s_point_clamp_sampler, prevUV, 0).rgb;
 
-                if (prevUV.x > 1.0 || prevUV.x < 0.0 || prevUV.y > 1.0 || prevUV.y < 0.0)
+                if (prevUV.x > 1.0 || prevUV.x < 0.0 || prevUV.y > 1.0 || prevUV.y < 0.0 || cloudsColor.a == 1.0)
                 {
                     // return 0 alpha to keep the color in render target.
                     return half4(0.0, 0.0, 0.0, 0.0);

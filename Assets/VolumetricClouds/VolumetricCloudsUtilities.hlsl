@@ -18,14 +18,14 @@
 // Size of Preset LUT (unused since it's not a compute shader)
 #define CLOUD_MAP_LUT_PRESET_SIZE 64.0
 // Density below wich we consider the density is zero (optimization reasons)
-#define CLOUD_DENSITY_TRESHOLD 0.001h
+#define CLOUD_DENSITY_TRESHOLD 0.001
 // Number of steps before we start the large steps
 #define EMPTY_STEPS_BEFORE_LARGE_STEPS 8
 // Forward eccentricity
-#define FORWARD_ECCENTRICITY 0.7h
+#define FORWARD_ECCENTRICITY 0.7
 // Forward eccentricity
-#define BACKWARD_ECCENTRICITY 0.7h
-// Distance until which the erosion texture i used
+#define BACKWARD_ECCENTRICITY 0.7
+// Distance until which the erosion texture is used
 #define MIN_EROSION_DISTANCE 3000.0
 #define MAX_EROSION_DISTANCE 100000.0
 // Value that is used to normalize the noise textures
@@ -39,15 +39,11 @@
 #define _PlanetCenterPosition float3(0.0, -_EarthRadius, 0.0)
 #define ConvertToPS(x) (x - _PlanetCenterPosition)
 
-#define _MaxCloudDistance FLT_MAX
-#define _NormalizationFactor (1.0 / (4.0 * PI))
-#define _VerticalShapeNoiseOffset 0.0
+// Used in perceptual blending, not implemented.
 #define _ImprovedTransmittanceBlend 1.0
 
 struct Ray
 {
-    // Depth value of the pixel
-    float depth;
     // Origin of the ray in world space
     float3 originWS;
     // Direction of the ray in world space
@@ -70,6 +66,7 @@ struct RayHit
     bool invalidRay;
 };
 
+// Perceptual blending
 half EvaluateFinalTransmittance(half3 color, half transmittance)
 {
     // Due to the high intensity of the sun, we often need apply the transmittance in a tonemapped space
@@ -86,11 +83,26 @@ half EvaluateFinalTransmittance(half3 color, half transmittance)
     return luminance > 0.0 ? lerp(transmittance, resultLuminance * rcp(luminance), _ImprovedTransmittanceBlend) : transmittance;
 }
 
+// These 2 functions were moved to the Core RP package by the commit below:
+// "[HDRP] Optimizations and quality improvements to PBR sky"
+// https://github.com/Unity-Technologies/Graphics/commit/9f7464a87cb8a09f23869dc178560bb8b072d4ca
+#if UNITY_VERSION < 202330
+
+// Use an infinite far plane
+// https://chaosinmotion.com/2010/09/06/goodbye-far-clipping-plane/
+// 'depth' is the linear depth (view-space Z position)
+float EncodeInfiniteDepth(float depth, float near)
+{
+    return saturate(near / depth);
+}
+
 // 'z' is the depth encoded in the depth buffer (1 at near plane, 0 at far plane)
 float DecodeInfiniteDepth(float z, float near)
 {
     return near / max(z, FLT_EPS);
 }
+
+#endif
 
 // Fonction that takes a world space position and converts it to a depth value
 float ConvertCloudDepth(float3 position)
@@ -242,15 +254,15 @@ bool IntersectCloudVolume(float3 originPS, half3 dir, float lowerBoundPS, float 
 bool GetCloudVolumeIntersection(float3 originWS, half3 dir, out RayMarchRange rayMarchRange)
 {
 #ifdef _LOCAL_VOLUMETRIC_CLOUDS
-    return IntersectCloudVolume(ConvertToPS(originWS), dir, _LowestCloudAltitude + _EarthRadius, _HighestCloudAltitude + _EarthRadius, rayMarchRange.start, rayMarchRange.end);
+    return IntersectCloudVolume(ConvertToPS(originWS), dir, _LowestCloudAltitude, _HighestCloudAltitude, rayMarchRange.start, rayMarchRange.end);
 #else
     {
         ZERO_INITIALIZE(RayMarchRange, rayMarchRange);
 
         // intersect with all three spheres
         float2 intersectionInter, intersectionOuter;
-        int numInterInner = RaySphereIntersection(originWS, dir, _LowestCloudAltitude + _EarthRadius, intersectionInter);
-        int numInterOuter = RaySphereIntersection(originWS, dir, _HighestCloudAltitude + _EarthRadius, intersectionOuter);
+        int numInterInner = RaySphereIntersection(originWS, dir, _LowestCloudAltitude, intersectionInter);
+        int numInterOuter = RaySphereIntersection(originWS, dir, _HighestCloudAltitude, intersectionOuter);
 
         // The ray starts at the first intersection with the lower bound and goes up to the first intersection with the outer bound
         rayMarchRange.start = intersectionInter.x;
@@ -289,7 +301,7 @@ float ErosionMipOffset(float distanceToCamera)
 // Function that returns the normalized height inside the cloud layer
 float EvaluateNormalizedCloudHeight(float3 positionPS)
 {
-    return RangeRemap(_LowestCloudAltitude + _EarthRadius, _HighestCloudAltitude + _EarthRadius, length(positionPS));
+    return RangeRemap(_LowestCloudAltitude, _HighestCloudAltitude, length(positionPS));
 }
 
 // Animation of the cloud shape position
@@ -298,15 +310,15 @@ float3 AnimateShapeNoisePosition(float3 positionPS)
     // We reduce the top-view repetition of the pattern
     positionPS.y += (positionPS.x / 3.0 + positionPS.z / 7.0);
     // We add the contribution of the wind displacements
-    //return positionPS + float3(_WindVector.x, 0.0, _WindVector.y) * _MediumWindSpeed + float3(0.0, _VerticalShapeWindDisplacement, 0.0);
-    return positionPS;
+    return positionPS + float3(_WindVector.x, 0.0, _WindVector.y) * _MediumWindSpeed + float3(0.0, _VerticalShapeWindDisplacement, 0.0);
+    //return positionPS;
 }
 
 // Animation of the cloud erosion position
 float3 AnimateErosionNoisePosition(float3 positionPS)
 {
-    //return positionPS + float3(_WindVector.x, 0.0, _WindVector.y) * _SmallWindSpeed + float3(0.0, _VerticalErosionWindDisplacement, 0.0);
-    return positionPS;
+    return positionPS + float3(_WindVector.x, 0.0, _WindVector.y) * _SmallWindSpeed + float3(0.0, _VerticalErosionWindDisplacement, 0.0);
+    //return positionPS;
 }
 
 // Structure that holds all the data used to define the cloud density of a point in space
@@ -377,17 +389,18 @@ void EvaluateCloudProperties(float3 positionPS, float noiseMipOffset, float eros
     properties.height = EvaluateNormalizedCloudHeight(positionPS);
 
     // When rendering in camera space, we still want horizontal scrolling
-    //positionPS.xz += _WorldSpaceCameraPos.xz * _CameraSpace;
+#ifndef _LOCAL_VOLUMETRIC_CLOUDS
+    positionPS.xz += _WorldSpaceCameraPos.xz;
+#endif
 
     // Evaluate the generic sampling coordinates
     float3 baseNoiseSamplingCoordinates = float3(AnimateShapeNoisePosition(positionPS).xzy / NOISE_TEXTURE_NORMALIZATION_FACTOR) * _ShapeScale - float3(_ShapeNoiseOffset.x, _ShapeNoiseOffset.y, _VerticalShapeNoiseOffset);
 
     // Evaluate the coordinates at which the noise will be sampled and apply wind displacement
-    //baseNoiseSamplingCoordinates += properties.height * float3(_WindDirection.x, _WindDirection.y, 0.0f) * _AltitudeDistortion;
-    baseNoiseSamplingCoordinates += properties.height * (_AltitudeDistortion * 0.0); // WIP
+    baseNoiseSamplingCoordinates += properties.height * float3(_WindDirection.x, _WindDirection.y, 0.0f) * _AltitudeDistortion;
 
     // Read the low frequency Perlin-Worley and Worley noises
-    half lowFrequencyNoise = SAMPLE_TEXTURE3D_LOD(_Worley32RGBA, s_trilinear_repeat_sampler, baseNoiseSamplingCoordinates.xyz, noiseMipOffset).r;
+    half lowFrequencyNoise = SAMPLE_TEXTURE3D_LOD(_Worley128RGBA, s_trilinear_repeat_sampler, baseNoiseSamplingCoordinates.xyz, noiseMipOffset).r;
 
     // Evaluate the cloud coverage data for this position
     CloudCoverageData cloudCoverageData;
@@ -468,7 +481,7 @@ half3 EvaluateSunLuminance(float3 positionWS, half3 sunDirection, half3 sunColor
     half3 luminance = half3(0.0, 0.0, 0.0);
 
     // If we early out, this means we've hit the earth itself
-    if (ExitCloudVolume(ConvertToPS(positionWS), sunDirection, _HighestCloudAltitude + _EarthRadius, totalLightDistance))
+    if (ExitCloudVolume(ConvertToPS(positionWS), sunDirection, _HighestCloudAltitude, totalLightDistance))
     {
         // Because of the very limited numebr of light steps and the potential humongous distance to cover, we decide to potnetially cover less and make it more useful
         totalLightDistance = clamp(totalLightDistance, 0, _NumLightSteps * LIGHT_STEP_MAXIMAL_SIZE);
@@ -507,7 +520,7 @@ half3 EvaluateSunLuminance(float3 positionWS, half3 sunDirection, half3 sunColor
 
         // Compute the luminance for each octave
         half3 sunColorXPowderEffect = sunColor * powderEffect * _SunLightDimmer;
-        half3 extinction = intervalSize * extinctionSum * (1.0 - _ScatteringTint.rgb);
+        half3 extinction = intervalSize * extinctionSum * _ScatteringTint.rgb;
         for (int o = 0; o < NUM_MULTI_SCATTERING_OCTAVES; ++o)
         {
             half msFactor = PositivePow(_MultiScattering, o);

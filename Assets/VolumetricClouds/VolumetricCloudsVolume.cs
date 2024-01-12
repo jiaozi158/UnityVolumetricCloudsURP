@@ -28,7 +28,7 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
         set { m_CloudPreset.value = value; ApplyCurrentCloudPreset(); }
     }
 
-    [Header("Shape"), InspectorName("Cloud Preset"), SerializeField]
+    [Header("Shape"), InspectorName("Cloud Preset"), SerializeField, Tooltip("Specifies the weather preset in Simple mode.")]
     private CloudPresetsParameter m_CloudPreset = new(CloudPresets.Cloudy, overrideState: false);
 
     /// <summary>
@@ -120,19 +120,19 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     /// </summary>
     [Tooltip("Controls the curvature of the cloud volume which defines the distance at which the clouds intersect with the horizon.")]
     public ClampedFloatParameter earthCurvature = new(0.0f, 0.0f, 1.0f);
-    /*
-    /// <summary>
-    /// Sets the global horizontal wind speed in kilometers per hour. This value can be relative to the Global Wind Speed defined in the Visual Environment.
-    /// </summary>
-    //[Header("Wind"), Tooltip("Sets the global horizontal wind speed in kilometers per hour.\nThis value can be relative to the Global Wind Speed defined in the Visual Environment.")]
-    //public WindSpeedParameter globalWindSpeed = new WindSpeedParameter();
 
     /// <summary>
-    /// Controls the orientation of the wind relative to the X world vector. This value can be relative to the Global Wind Orientation defined in the Visual Environment.
+    /// Controls the global orientation of the wind relative to the X world vector.
     /// </summary>
-    //[Tooltip("Controls the orientation of the wind relative to the X world vector.\nThis value can be relative to the Global Wind Orientation defined in the Visual Environment.")]
-    //public WindOrientationParameter orientation = new WindOrientationParameter();
-    
+    [Header("Wind"), Tooltip("Controls the global orientation of the wind relative to the X world vector.")]
+    public ClampedFloatParameter globalOrientation = new(0.0f, 0.0f, 360.0f);
+
+    /// <summary>
+    /// Sets the global horizontal wind speed in kilometers per hour.
+    /// </summary>
+    [Tooltip("Sets the global horizontal wind speed in kilometers per hour.")]
+    public FloatParameter globalSpeed = new(0.0f);
+
     /// <summary>
     /// Controls the multiplier to the speed of the larger cloud shapes.
     /// </summary>
@@ -146,13 +146,14 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     [AdditionalProperty]
     [Tooltip("Controls the multiplier to the speed of the erosion cloud shapes.")]
     public ClampedFloatParameter erosionSpeedMultiplier = new(0.25f, 0.0f, 1.0f);
-    */
+
     /// <summary>
     /// Controls the intensity of the wind-based altitude distortion of the clouds.
     /// </summary>
-    [Header("Wind (WIP)"), AdditionalProperty, Tooltip("Controls the intensity of the wind-based altitude distortion of the clouds.")]
+    [AdditionalProperty]
+    [Tooltip("Controls the intensity of the wind-based altitude distortion of the clouds.")]
     public ClampedFloatParameter altitudeDistortion = new(0.25f, -1.0f, 1.0f);
-    /*
+    
     /// <summary>
     /// Controls the vertical wind speed of the larger cloud shapes.
     /// </summary>
@@ -167,6 +168,7 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     [Tooltip("Controls the vertical wind speed of the erosion cloud shapes.")]
     public FloatParameter verticalErosionWindSpeed = new(0.0f);
 
+    /*
     /// <summary>
     /// Controls the multiplier to the speed of the cloud map.
     /// </summary>
@@ -174,17 +176,18 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     [Tooltip("Controls the multiplier to the speed of the cloud map.")]
     public ClampedFloatParameter cloudMapSpeedMultiplier = new(0.5f, 0.0f, 1.0f); 
     */
+
     /// <summary>
     /// Controls the influence of the light probes on the cloud volume. A lower value will suppress the ambient light and produce darker clouds overall.
     /// </summary>
     [Header("Lighting"), Tooltip("Controls the influence of the light probes on the cloud volume. A lower value will suppress the ambient light and produce darker clouds overall.")]
-    public ClampedFloatParameter ambientLightProbeDimmer = new(1.0f, 0.0f, 1.0f);
+    public ClampedFloatParameter ambientLightProbeDimmer = new(1.0f, 0.0f, 2.0f);
 
     /// <summary>
     /// Controls the influence of the sun light on the cloud volume. A lower value will suppress the sun light and produce darker clouds overall.
     /// </summary>
     [Tooltip("Controls the influence of the sun light on the cloud volume. A lower value will suppress the sun light and produce darker clouds overall.")]
-    public ClampedFloatParameter sunLightDimmer = new(1.0f, 0.0f, 1.0f);
+    public ClampedFloatParameter sunLightDimmer = new(1.0f, 0.0f, 2.0f);
 
     /// <summary>
     /// Controls how much Erosion Factor is taken into account when computing ambient occlusion. The Erosion Factor parameter is editable in the custom preset, Advanced and Manual Modes.

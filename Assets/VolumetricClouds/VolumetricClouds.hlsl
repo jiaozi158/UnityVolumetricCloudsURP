@@ -1,13 +1,12 @@
 #ifndef URP_VOLUMETRIC_CLOUDS_HLSL
 #define URP_VOLUMETRIC_CLOUDS_HLSL
 
+#include "./VolumetricCloudsDefs.hlsl"
 #include "./VolumetricCloudsUtilities.hlsl"
 
 Ray BuildCloudsRay(float2 screenUV, float3 positionWS, half3 invViewDirWS, bool isOccluded)
 {
     Ray ray;
-
-    ray.depth = UNITY_RAW_FAR_CLIP_VALUE;
 
 #ifdef _LOCAL_VOLUMETRIC_CLOUDS
     ray.originWS = GetCameraPositionWS();
@@ -19,7 +18,8 @@ Ray BuildCloudsRay(float2 screenUV, float3 positionWS, half3 invViewDirWS, bool 
 
     // Compute the max cloud ray length
 #ifdef _LOCAL_VOLUMETRIC_CLOUDS
-    ray.maxRayLength = lerp(MAX_SKYBOX_VOLUMETRIC_CLOUDS_DISTANCE, length(positionWS), isOccluded);
+    float length = LinearEyeDepth(positionWS, UNITY_MATRIX_I_VP) * rcp(dot(ray.direction, -UNITY_MATRIX_V[2].xyz));
+    ray.maxRayLength = lerp(MAX_SKYBOX_VOLUMETRIC_CLOUDS_DISTANCE, length, isOccluded);
 #else
     ray.maxRayLength = MAX_SKYBOX_VOLUMETRIC_CLOUDS_DISTANCE;
 #endif
@@ -34,7 +34,7 @@ RayHit TraceCloudsRay(Ray ray)
     RayHit rayHit;
     rayHit.inScattering = half3(0.0, 0.0, 0.0);
     rayHit.transmittance = 1.0;
-    rayHit.meanDistance = _MaxCloudDistance;
+    rayHit.meanDistance = FLT_MAX;
     rayHit.invalidRay = true;
 
     // Determine if ray intersects bounding volume, if the ray does not intersect the cloud volume AABB, skip right away
@@ -53,12 +53,13 @@ RayHit TraceCloudsRay(Ray ray)
             // - Far plane
             float totalDistance = min(rayMarchRange.end, ray.maxRayLength) - rayMarchRange.start;
 
+            // Evaluate our integration step
+            float stepS = min(totalDistance / (float)_NumPrimarySteps, _MaxStepSize);
+            totalDistance = stepS * _NumPrimarySteps;
+
             // Compute the environment lighting that is going to be used for the cloud evaluation
             float3 rayMarchStartPS = ConvertToPS(ray.originWS) + rayMarchRange.start * ray.direction;
             float3 rayMarchEndPS = rayMarchStartPS + totalDistance * ray.direction;
-
-            // Evaluate our integration step
-            float stepS = totalDistance / (float)_NumPrimarySteps;
 
             // Tracking the number of steps that have been made
             int currentIndex = 0;
@@ -66,11 +67,9 @@ RayHit TraceCloudsRay(Ray ray)
             // Normalization value of the depth
             float meanDistanceDivider = 0.0;
 
-            // Current position for the evaluation
+            // Current position for the evaluation, apply blue noise to start position
+            float currentDistance = ray.integrationNoise;
             float3 currentPositionWS = ray.originWS + rayMarchRange.start * ray.direction;
-
-            // Current Distance that has been marched
-            float currentDistance = 0;
 
             // Initialize the values for the optimized ray marching
             bool activeSampling = true;
@@ -88,7 +87,6 @@ RayHit TraceCloudsRay(Ray ray)
                 if (activeSampling)
                 {
                     // Convert to planet space
-                    //float3 positionPS = currentPositionWS + float3(0, _EarthRadius, 0);
                     float3 positionPS = ConvertToPS(currentPositionWS);
 
                     // If the density is null, we can skip as there will be no contribution
@@ -97,7 +95,6 @@ RayHit TraceCloudsRay(Ray ray)
 
                     // Apply the fade in function to the density
                     properties.density *= densityAttenuationValue;
-                    //rayHit.inScattering = properties.density.xxx;
 
                     if (properties.density > CLOUD_DENSITY_TRESHOLD)
                     {

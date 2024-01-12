@@ -110,7 +110,9 @@ MonoBehaviour:
   m_Active: 1
   material: {fileID: 2100000, guid: 3748131af20412e478461c6445c73923, type: 2}
   renderingDebugger: 0
-  resolutionScale: 0.75
   reflectionProbe: 1
+  resolutionScale: 0.6
+  upscaleMode: 0
   preferredRenderMode: 1
   ambientProbe: 1
+  resetOnStart: 1
