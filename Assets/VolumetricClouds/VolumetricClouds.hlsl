@@ -4,7 +4,7 @@
 #include "./VolumetricCloudsDefs.hlsl"
 #include "./VolumetricCloudsUtilities.hlsl"
 
-Ray BuildCloudsRay(float2 screenUV, float3 positionWS, half3 invViewDirWS, bool isOccluded)
+Ray BuildCloudsRay(float2 screenUV, float depth, half3 invViewDirWS, bool isOccluded)
 {
     Ray ray;
 
@@ -17,9 +17,11 @@ Ray BuildCloudsRay(float2 screenUV, float3 positionWS, half3 invViewDirWS, bool 
     ray.direction = invViewDirWS;
 
     // Compute the max cloud ray length
+    // For opaque objects, we only care about clouds in front of them.
 #ifdef _LOCAL_VOLUMETRIC_CLOUDS
-    float length = LinearEyeDepth(positionWS, UNITY_MATRIX_I_VP) * rcp(dot(ray.direction, -UNITY_MATRIX_V[2].xyz));
-    ray.maxRayLength = lerp(MAX_SKYBOX_VOLUMETRIC_CLOUDS_DISTANCE, length, isOccluded);
+    // The depth may from a high-res texture which isn't ideal but can save performance.
+    float distance = LinearEyeDepth(depth, _ZBufferParams) * rcp(dot(ray.direction, -UNITY_MATRIX_V[2].xyz));
+    ray.maxRayLength = lerp(MAX_SKYBOX_VOLUMETRIC_CLOUDS_DISTANCE, distance, isOccluded);
 #else
     ray.maxRayLength = MAX_SKYBOX_VOLUMETRIC_CLOUDS_DISTANCE;
 #endif
@@ -69,7 +71,7 @@ RayHit TraceCloudsRay(Ray ray)
 
             // Current position for the evaluation, apply blue noise to start position
             float currentDistance = ray.integrationNoise;
-            float3 currentPositionWS = ray.originWS + rayMarchRange.start * ray.direction;
+            float3 currentPositionWS = ray.originWS + (rayMarchRange.start + currentDistance) * ray.direction;
 
             // Initialize the values for the optimized ray marching
             bool activeSampling = true;

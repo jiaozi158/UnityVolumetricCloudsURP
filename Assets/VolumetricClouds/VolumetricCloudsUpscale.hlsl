@@ -31,7 +31,6 @@ half4 BilateralUpscale(float2 screenUV)
             half2 distance = (screenUV - offsetUV) * _ScreenParams.xy;
 
             half colorDiff = length(centerColor.rgba - neighborColor.rgba);
-            half alphaDiff = abs(centerColor.a - neighborColor.a);
 
             half weight = Weight(length(distance)) * rcp(colorDiff + _UpsampleTolerance);
 

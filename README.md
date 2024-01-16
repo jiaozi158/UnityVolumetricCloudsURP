@@ -32,12 +32,10 @@ Requirements
  
 Reminders
 ------------
-- It is suggested to enable **TAA** rather than using **MSAA** though both are supported.
 - Some settings are still WIP, such as **Custom Cloud Map** overrides.
 - Orthographic camera is not supported.
 - Clouds shadowmap is not supported.
 - The sun lighting should be adjusted manually to support dynamic time of day since URP doesn't support physically based sky.
-- The current version is untested on XR platforms, please wait for future updates.
  
 License
 ------------

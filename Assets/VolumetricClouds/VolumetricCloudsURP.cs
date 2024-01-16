@@ -19,7 +19,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
     [Header("Performance")]
     [Tooltip("Specifies if URP renders volumetric clouds in both real-time and baked reflection probes. \nVolumetric clouds in real-time reflection probes may reduce performace.")]
     [SerializeField] private bool reflectionProbe = false;
-    [Range(0.5f, 1.0f), Tooltip("The resolution scale for volumetric clouds rendering.")]
+    [Range(0.4f, 1.0f), Tooltip("The resolution scale for volumetric clouds rendering.")]
     [SerializeField] private float resolutionScale = 0.5f;
     [Tooltip("Select the method to use for upscaling volumetric clouds.")]
     [SerializeField] private CloudsUpscaleMode upscaleMode = CloudsUpscaleMode.Bilinear;

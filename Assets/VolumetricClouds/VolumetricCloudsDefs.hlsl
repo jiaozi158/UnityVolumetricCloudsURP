@@ -2,12 +2,12 @@
 #define URP_VOLUMETRIC_CLOUDS_DEFINES_HLSL
 
 CBUFFER_START(UnityPerMaterial)
-half _Seed;
+float _Seed;
 half _NumPrimarySteps;
 half _NumLightSteps;
 half _MaxStepSize;
-half _HighestCloudAltitude;
-half _LowestCloudAltitude;
+float _HighestCloudAltitude;
+float _LowestCloudAltitude;
 half4 _ShapeNoiseOffset;
 half _VerticalShapeNoiseOffset;
 half4 _WindDirection;

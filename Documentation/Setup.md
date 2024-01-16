@@ -20,8 +20,4 @@ Setup
 
 - Adjust the settings in URP Volume and use different Volume types (global and local) to control volumetric clouds if needed.
 
-- For local volumetric clouds, increase the far plane of **camera** or **reflection probe** to render distant clouds.
-
- ![AdjustFarPlane](./Images/Settings/URP_SceneCamera_FarPlane.jpg)
-
 - On platforms that don't implement reversed-z (ex. OpenGL), please keep the camera near plane (ex. 0.1) high to avoid depth precision issues.

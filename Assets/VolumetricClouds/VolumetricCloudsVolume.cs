@@ -223,7 +223,7 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     /// Controls the number of steps when evaluating the clouds' transmittance. A higher value may lead to a lower noise level and longer view distance, but at a higher cost.
     /// </summary>
     [Tooltip("Controls the number of steps when evaluating the clouds' transmittance. A higher value may lead to a lower noise level and longer view distance, but at a higher cost.")]
-    public ClampedIntParameter numPrimarySteps = new(24, 32, 256);
+    public ClampedIntParameter numPrimarySteps = new(32, 24, 256);
 
     /// <summary>
     /// Controls the number of steps when evaluating the clouds' lighting. A higher value will lead to smoother lighting and improved self-shadowing, but at a higher cost.

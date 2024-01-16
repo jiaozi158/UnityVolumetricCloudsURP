@@ -104,7 +104,7 @@ Shader "Hidden/Sky/VolumetricClouds"
                     return half4(0.0, 0.0, 0.0, 1.0);
             #endif
 
-                Ray ray = BuildCloudsRay(screenUV, positionWS, invViewDirWS, isOccluded);
+                Ray ray = BuildCloudsRay(screenUV, depth, invViewDirWS, isOccluded);
 
                 // Evaluate the cloud transmittance
                 RayHit rayHit = TraceCloudsRay(ray);
@@ -112,14 +112,13 @@ Shader "Hidden/Sky/VolumetricClouds"
                 if (rayHit.invalidRay)
                     return half4(0.0, 0.0, 0.0, 1.0);
 
-            #ifdef _LOCAL_VOLUMETRIC_CLOUDS
-                float cloudDepth = rayHit.meanDistance;
-                //cloudDepth = DecodeInfiniteDepth(cloudDepth, _ProjectionParams.y);
-                cloudDepth = min(DecodeInfiniteDepth(cloudDepth, _ProjectionParams.y), _ProjectionParams.z);
+                //rayHit.meanDistance = min(rayHit.meanDistance, ray.maxRayLength);
 
-                half3 viewDir = normalize(positionWS - GetCameraPositionWS());
+            // [Deprecated] Old clouds blending, keep it in case we need to output clouds depth in the future.
+            /*
+            #ifdef _LOCAL_VOLUMETRIC_CLOUDS
                 float3 cloudPosWS = GetCameraPositionWS() + rayHit.meanDistance * invViewDirWS;
-                cloudDepth = saturate(ConvertCloudDepth(cloudPosWS));
+                float cloudDepth = ConvertCloudDepth(cloudPosWS);
                 // Apply a simple depth test.
             #if !UNITY_REVERSED_Z
                 if (cloudDepth >= depth)
@@ -129,6 +128,7 @@ Shader "Hidden/Sky/VolumetricClouds"
                     return half4(0.0, 0.0, 0.0, 1.0);
             #endif
             #endif
+            */
                 return half4(rayHit.inScattering.xyz, rayHit.transmittance);
 
             }
@@ -153,7 +153,7 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma target 3.5
 
-            TEXTURE2D(_VolumetricCloudsColorTexture);
+            TEXTURE2D_X(_VolumetricCloudsColorTexture);
             float4 _VolumetricCloudsColorTexture_TexelSize;
 
             // URP pre-defined the following variable on 2023.2+.
@@ -201,7 +201,7 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma target 3.5
             
-            TEXTURE2D(_VolumetricCloudsColorTexture);
+            TEXTURE2D_X(_VolumetricCloudsColorTexture);
             float4 _VolumetricCloudsColorTexture_TexelSize;
 
             SAMPLER(s_linear_clamp_sampler);
@@ -253,8 +253,8 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma multi_compile_local_fragment _ _LOCAL_VOLUMETRIC_CLOUDS
 
-            TEXTURE2D(_VolumetricCloudsColorTexture);
-            TEXTURE2D(_VolumetricCloudsHistoryTexture);
+            TEXTURE2D_X(_VolumetricCloudsColorTexture);
+            TEXTURE2D_X(_VolumetricCloudsHistoryTexture);
 
             SAMPLER(s_point_clamp_sampler);
 
@@ -345,7 +345,7 @@ Shader "Hidden/Sky/VolumetricClouds"
                 float2 prevUV = screenUV + velocity;
                 
                 // Re-projected color from last frame.
-                half3 prevColor = SAMPLE_TEXTURE2D_LOD(_VolumetricCloudsHistoryTexture, s_point_clamp_sampler, prevUV, 0).rgb;
+                half3 prevColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsHistoryTexture, s_point_clamp_sampler, prevUV, 0).rgb;
 
                 if (prevUV.x > 1.0 || prevUV.x < 0.0 || prevUV.y > 1.0 || prevUV.y < 0.0 || cloudsColor.a == 1.0)
                 {
