@@ -72,12 +72,12 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
     /// Gets or sets the resolution scale for volumetric clouds rendering.
     /// </summary>
     /// <value>
-    /// The resolution scale for volumetric clouds rendering, ranging from 0.25 to 1.0.
+    /// The resolution scale for volumetric clouds rendering, ranging from 0.4 to 1.0.
     /// </value>
     public float ResolutionScale
     {
         get { return resolutionScale; }
-        set { resolutionScale = Mathf.Clamp(value, 0.25f, 1.0f); }
+        set { resolutionScale = Mathf.Clamp(value, 0.4f, 1.0f); }
     }
 
     /// <summary>
@@ -230,9 +230,6 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             volumetricCloudsPass.dynamicAmbientProbe = dynamicAmbientProbe;
             volumetricCloudsPass.renderMode = preferredRenderMode;
             volumetricCloudsPass.resetWindOnStart = resetOnStart;
-            // If the probe is at the origin, we assume it's a global probe.
-            // We disable local clouds in that case because the far clipping plane of a global probe is only 10.
-            volumetricCloudsPass.isGlobalProbeCamera = isProbeCamera && renderingData.cameraData.camera.transform.position == Vector3.zero;
 
             // No need to render dynamic ambient probe for reflection probes.
             renderer.EnqueuePass(volumetricCloudsPass);
@@ -240,7 +237,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
             isLogPrinted = false;
         }
-        else if (isDebugger && !isLogPrinted)
+        else if (isDebugger && !renderingDebugger && !isLogPrinted)
         {
             Debug.Log("Volumetric Clouds URP: Disable effect to avoid affecting rendering debugging.");
             isLogPrinted = true;
@@ -254,7 +251,6 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         public float resolutionScale;
         public CloudsUpscaleMode upscaleMode;
         public bool dynamicAmbientProbe;
-        public bool isGlobalProbeCamera;
         public bool resetWindOnStart;
 
         private bool denoiseClouds;
@@ -309,6 +305,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         private readonly Color32[] customLutColorArray = new Color32[customLutMapResolution];
 
         private const float earthRad = 6378100.0f;
+        private const float windNormalizationFactor = 100000.0f; // NOISE_TEXTURE_NORMALIZATION_FACTOR in "VolumetricCloudsUtilities.hlsl"
         private const int customLutMapResolution = 64;
 
         // Wind offsets
@@ -320,7 +317,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
         private void UpdateMaterialProperties(Camera camera)
         {
-            if (cloudsVolume.localClouds.value && (!isGlobalProbeCamera)) { cloudsMaterial.EnableKeyword(localClouds); }
+            if (cloudsVolume.localClouds.value) { cloudsMaterial.EnableKeyword(localClouds); }
             else { cloudsMaterial.DisableKeyword(localClouds); }
 
             if (cloudsVolume.microErosion.value && cloudsVolume.microErosionFactor.value > 0.0f) { cloudsMaterial.EnableKeyword(microErosion); }
@@ -372,6 +369,11 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 windVector += deltaTime * cloudsVolume.globalSpeed.value * windDirection;
                 verticalShapeOffset += deltaTime * cloudsVolume.verticalShapeWindSpeed.value;
                 verticalErosionOffset += deltaTime * cloudsVolume.erosionSpeedMultiplier.value;
+                // Reset the accumulated wind variables periodically to avoid extreme values.
+                windVector.x %= windNormalizationFactor;
+                windVector.y %= windNormalizationFactor;
+                verticalShapeOffset %= windNormalizationFactor;
+                verticalErosionOffset %= windNormalizationFactor;
             }
 
             // Update previous values
