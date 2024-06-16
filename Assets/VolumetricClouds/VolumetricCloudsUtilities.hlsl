@@ -104,7 +104,7 @@ float DecodeInfiniteDepth(float z, float near)
 
 #endif
 
-// Fonction that takes a world space position and converts it to a depth value
+// Function that takes a world space position and converts it to a depth value
 float ConvertCloudDepth(float3 position)
 {
     float4 hClip = TransformWorldToHClip(position);
@@ -153,6 +153,12 @@ float2 IntersectSphere(float sphereRadius, float cosChi,
     // Return the value of 'd' for debugging purposes.
     return (d < 0) ? d : (radialDistance * float2(-cosChi - sqrt(d),
                                                   -cosChi + sqrt(d)));
+}
+
+// TODO: remove.
+float2 IntersectSphere(float sphereRadius, float cosChi, float radialDistance)
+{
+    return IntersectSphere(sphereRadius, cosChi, radialDistance, rcp(radialDistance));
 }
 
 float ComputeCosineOfHorizonAngle(float r)
@@ -439,10 +445,9 @@ void EvaluateCloudProperties(float3 positionPS, float noiseMipOffset, float eros
     half ambientOcclusionBlend = saturate(1.0 - max(erosionFactor, shapeFactor) * 0.5);
     properties.ambientOcclusion = lerp(1.0, properties.ambientOcclusion, ambientOcclusionBlend);
 
-    // Apply the erosion for nifer details
+    // Apply the erosion for nicer details
     if (!cheapVersion)
     {
-        //half erosionMipOffset = 0.5;
         float3 erosionCoords = AnimateErosionNoisePosition(positionPS) / NOISE_TEXTURE_NORMALIZATION_FACTOR * _ErosionScale;
         half erosionNoise = 1.0 - SAMPLE_TEXTURE3D_LOD(_ErosionNoise, s_linear_repeat_sampler, erosionCoords, CLOUD_DETAIL_MIP_OFFSET + erosionMipOffset).x;
         erosionNoise = lerp(0.0, erosionNoise, erosionFactor * 0.75 * cloudCoverageData.coverage.x);
@@ -533,6 +538,114 @@ half3 EvaluateSunLuminance(float3 positionWS, half3 sunDirection, half3 sunColor
     return luminance;
 }
 
+float ChapmanUpperApprox(float z, float cosTheta)
+{
+    float c = cosTheta;
+    float n = 0.761643 * ((1 + 2 * z) - (c * c * z));
+    float d = c * z + sqrt(z * (1.47721 + 0.273828 * (c * c * z)));
+
+    return 0.5 * c + (n * rcp(d));
+}
+
+float ChapmanHorizontal(float z)
+{
+    float r = rsqrt(z);
+    float s = z * r; // sqrt(z)
+
+    return 0.626657 * (r + 2 * s);
+}
+
+// Default atmosphere settings of HDRP physically based sky
+#define _AirScaleHeight 8000.0
+#define _AerosolScaleHeight 1200.0
+#define _AirDensityFalloff 1.0 / _AirScaleHeight
+#define _AerosolDensityFalloff 1.0 / _AerosolScaleHeight
+#define _PlanetaryRadius _EarthRadius
+#define _AirSeaLevelExtinction (half3(5.8, 13.5, 33.1) / 1000000.0)
+#define _AerosolSeaLevelExtinction -0.00001
+
+//#define _AlphaSaturation 1.0
+//#define _AlphaMultiplier 1.0
+
+float3 ComputeAtmosphericOpticalDepth(float r, float cosTheta, bool aboveHorizon)
+{
+    const float2 n = float2(_AirDensityFalloff, _AerosolDensityFalloff);
+    const float2 H = float2(_AirScaleHeight, _AerosolScaleHeight);
+    const float  R = _PlanetaryRadius;
+
+    float2 z = n * r;
+    float2 Z = n * R;
+
+    float sinTheta = sqrt(saturate(1 - cosTheta * cosTheta));
+
+    float2 ch;
+    ch.x = ChapmanUpperApprox(z.x, abs(cosTheta)) * exp(Z.x - z.x); // Rescaling adds 'exp'
+    ch.y = ChapmanUpperApprox(z.y, abs(cosTheta)) * exp(Z.y - z.y); // Rescaling adds 'exp'
+
+    if (!aboveHorizon) // Below horizon, intersect sphere
+    {
+        float sinGamma = (r / R) * sinTheta;
+        float cosGamma = sqrt(saturate(1 - sinGamma * sinGamma));
+
+        float2 ch_2;
+        ch_2.x = ChapmanUpperApprox(Z.x, cosGamma); // No need to rescale
+        ch_2.y = ChapmanUpperApprox(Z.y, cosGamma); // No need to rescale
+
+        ch = ch_2 - ch;
+    }
+    else if (cosTheta < 0)   // Above horizon, lower hemisphere
+    {
+        // z_0 = n * r_0 = (n * r) * sin(theta) = z * sin(theta).
+        // Ch(z, theta) = 2 * exp(z - z_0) * Ch(z_0, Pi/2) - Ch(z, Pi - theta).
+        float2 z_0 = z * sinTheta;
+        float2 b = exp(Z - z_0); // Rescaling cancels out 'z' and adds 'Z'
+        float2 a;
+        a.x = 2 * ChapmanHorizontal(z_0.x);
+        a.y = 2 * ChapmanHorizontal(z_0.y);
+        float2 ch_2 = a * b;
+
+        ch = ch_2 - ch;
+    }
+
+    float2 optDepth = ch * H;
+
+    return optDepth.x * _AirSeaLevelExtinction.xyz + optDepth.y * _AerosolSeaLevelExtinction;
+}
+
+// This function evaluates the sun color attenuation from the physically based sky
+half3 EvaluateSunColorAttenuation(float3 positionPS, float3 sunDirection, bool estimatePenumbra = false)
+{
+    float r = length(positionPS);
+    float cosTheta = dot(positionPS, sunDirection) * rcp(r); // Normalize
+
+    // Point can be below horizon due to precision issues
+    r = max(r, _PlanetaryRadius);
+    float cosHoriz = ComputeCosineOfHorizonAngle(r);
+
+    if (cosTheta >= cosHoriz) // Above horizon
+    {
+        float3 oDepth = ComputeAtmosphericOpticalDepth(r, cosTheta, true);
+        half3 opacity = 1 - TransmittanceFromOpticalDepth(oDepth);
+        half penumbra = saturate((cosTheta - cosHoriz) / 0.0019); // very scientific value
+        half3 attenuation = 1 - opacity;// (Desaturate(opacity, _AlphaSaturation) * _AlphaMultiplier);
+        return estimatePenumbra ? attenuation * penumbra : attenuation;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+// Function that evaluates the sun color along the ray
+half3 EvaluateSunColor(float3 entryEvaluationPointPS, float3 exitEvaluationPointPS, half3 sunDirection, half3 sunColor, float relativeRayDistance)
+{
+    // evaluate the attenuation at both points (entrance and exit of the cloud layer)
+    half3 sunColor0 = sunColor * EvaluateSunColorAttenuation(entryEvaluationPointPS, sunDirection, true);
+    half3 sunColor1 = sunColor * EvaluateSunColorAttenuation(exitEvaluationPointPS, sunDirection, false);
+
+    return lerp(sunColor0, sunColor1, relativeRayDistance);
+}
+
 // Evaluates the inscattering from this position
 void EvaluateCloud(CloudProperties cloudProperties, half3 rayDirection,
     float3 currentPositionWS, float3 entryEvaluationPointPS, float3 exitEvaluationPointPS, 
@@ -549,8 +662,11 @@ void EvaluateCloud(CloudProperties cloudProperties, half3 rayDirection,
     half powder_effect = PowderEffect(cloudProperties.density, cosAngle, _PowderEffectIntensity);
 
     // Evaluate the sun color at the position
+#if defined(_PHYSICALLY_BASED_SUN)
+    half3 sunColor = EvaluateSunColor(entryEvaluationPointPS, exitEvaluationPointPS, sun.direction, sun.color, relativeRayDistance);
+#else
     half3 sunColor = sun.color;
-    //sunColor = EvaluateSunColor(entryEvaluationPointPS, exitEvaluationPointPS, sun.direction, sun.color, relativeRayDistance);
+#endif
 
     // Evaluate the phase function for each of the octaves
     half2 phaseFunction = half2(0.0, 0.0);
@@ -562,6 +678,12 @@ void EvaluateCloud(CloudProperties cloudProperties, half3 rayDirection,
     forwardP = HenyeyGreensteinPhaseFunction(FORWARD_ECCENTRICITY * PositivePow(_MultiScattering, 1), cosAngle);
     backwardsP = HenyeyGreensteinPhaseFunction(-BACKWARD_ECCENTRICITY * PositivePow(_MultiScattering, 1), cosAngle);
     phaseFunction[1] = forwardP + backwardsP;
+#endif
+
+#if NUM_MULTI_SCATTERING_OCTAVES >= 3
+    forwardP = HenyeyGreensteinPhaseFunction(FORWARD_ECCENTRICITY * PositivePow(_MultiScattering, 2), cosAngle);
+    backwardsP = HenyeyGreensteinPhaseFunction(-BACKWARD_ECCENTRICITY * PositivePow(_MultiScattering, 2), cosAngle);
+    phaseFunction[2] = forwardP + backwardsP;
 #endif
 
     // Evaluate the sun's luminance

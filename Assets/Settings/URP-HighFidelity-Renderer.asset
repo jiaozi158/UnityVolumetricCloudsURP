@@ -115,4 +115,6 @@ MonoBehaviour:
   upscaleMode: 0
   preferredRenderMode: 1
   ambientProbe: 1
+  sunAttenuation: 0
   resetOnStart: 1
+  outputDepth: 0

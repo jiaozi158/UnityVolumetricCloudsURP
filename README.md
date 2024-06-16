@@ -34,8 +34,7 @@ Reminders
 ------------
 - Some settings are still WIP, such as **Custom Cloud Map** overrides.
 - Orthographic camera is not supported.
-- Clouds shadowmap is not supported.
-- The sun lighting should be adjusted manually to support dynamic time of day since URP doesn't support physically based sky.
+- To render volumetric clouds shadows, it will override the cookie in the main directional light.
  
 License
 ------------

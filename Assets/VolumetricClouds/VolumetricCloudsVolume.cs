@@ -8,6 +8,7 @@ using UnityEngine.Rendering.Universal;
 #else
 [Serializable, VolumeComponentMenuForRenderPipeline("Sky/Volumetric Clouds (URP)", typeof(UniversalRenderPipeline))]
 #endif
+[HelpURL("https://github.com/jiaozi158/UnityVolumetricCloudsURP/tree/main")]
 public class VolumetricClouds : VolumeComponent, IPostProcessComponent
 {
     /// <summary>
@@ -212,6 +213,62 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     /// </summary>
     [AdditionalProperty, Tooltip("Controls the amount of multi-scattering inside the cloud.")]
     public ClampedFloatParameter multiScattering = new(0.5f, 0.0f, 1.0f);
+
+    /// <summary>
+    /// When enabled, URP evaluates the Volumetric Clouds' shadows. To render the shadows, this property overrides the cookie in the main directional light.
+    /// </summary>
+    [Header("Shadows"), Tooltip("When enabled, URP evaluates the Volumetric Clouds' shadows. To render the shadows, this property overrides the cookie in the main directional light.")]
+    public BoolParameter shadows = new BoolParameter(false);
+
+    /// <summary>
+    /// Resolution of the volumetric clouds shadow.
+    /// </summary>
+    public enum CloudShadowResolution
+    {
+        /// <summary>The volumetric clouds shadow will be 64x64.</summary>
+        VeryLow64 = 64,
+        /// <summary>The volumetric clouds shadow will be 128x128.</summary>
+        Low128 = 128,
+        /// <summary>The volumetric clouds shadow will be 256x256.</summary>
+        Medium256 = 256,
+        /// <summary>The volumetric clouds shadow will be 512x512.</summary>
+        High512 = 512,
+        /// <summary>The volumetric clouds shadow will be 1024x1024.</summary>
+        Ultra1024 = 1024,
+    }
+
+    /// <summary>
+    /// Specifies the resolution of the volumetric clouds shadow map.
+    /// </summary>
+    [Tooltip("Specifies the resolution of the volumetric clouds shadow map.")]
+    public CloudShadowResolutionParameter shadowResolution = new CloudShadowResolutionParameter(CloudShadowResolution.Medium256);
+
+    /// <summary>
+    /// Sets the size of the area covered by shadow around the camera.
+    /// </summary>
+    [Tooltip("Sets the size of the area covered by shadow around the camera.")]
+    [AdditionalProperty]
+    public MinFloatParameter shadowDistance = new MinFloatParameter(8000.0f, 1000.0f);
+
+    /// <summary>
+    /// Controls the vertical offset applied to compute the volumetric clouds shadow in meters. To have accurate results, enter the average height at which the volumetric clouds shadow is received.
+    /// </summary>
+    //[Tooltip("Controls the vertical offset applied to compute the volumetric clouds shadow in meters. To have accurate results, enter the average height at which the volumetric clouds shadow is received.")]
+    //public FloatParameter shadowPlaneHeightOffset = new FloatParameter(0.0f);
+
+    /// <summary>
+    /// Controls the opacity of the volumetric clouds shadow.
+    /// </summary>
+    [Tooltip("Controls the opacity of the volumetric clouds shadow.")]
+    [AdditionalProperty]
+    public ClampedFloatParameter shadowOpacity = new ClampedFloatParameter(1.0f, 0.0f, 1.0f);
+
+    /// <summary>
+    /// Controls the shadow opacity when outside the area covered by the volumetric clouds shadow.
+    /// </summary>
+    [Tooltip("Controls the shadow opacity when outside the area covered by the volumetric clouds shadow.")]
+    [AdditionalProperty]
+    public ClampedFloatParameter shadowOpacityFallback = new ClampedFloatParameter(0.0f, 0.0f, 1.0f);
 
     /// <summary>
     /// Temporal accumulation increases the visual quality of clouds by decreasing the noise. A higher value will give you better quality but can create ghosting.
@@ -440,10 +497,24 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     public sealed class CloudFadeInParameter : VolumeParameter<CloudFadeInMode>
     {
         /// <summary>
-        /// Creates a new <see cref="CloudPresetsParameter"/> instance.
+        /// Creates a new <see cref="CloudFadeInParameter"/> instance.
         /// </summary>
         /// <param name="value">The initial value to store in the parameter.</param>
         /// <param name="overrideState">The initial override state for the parameter.</param>
         public CloudFadeInParameter(CloudFadeInMode value, bool overrideState = false) : base(value, overrideState) { }
+    }
+
+    /// <summary>
+    /// A <see cref="VolumeParameter"/> that holds a <see cref="CloudShadowResolution"/> value.
+    /// </summary>
+    [Serializable]
+    public sealed class CloudShadowResolutionParameter : VolumeParameter<CloudShadowResolution>
+    {
+        /// <summary>
+        /// Creates a new <see cref="CloudShadowResolutionParameter"/> instance.
+        /// </summary>
+        /// <param name="value">The initial value to store in the parameter.</param>
+        /// <param name="overrideState">The initial override state for the parameter.</param>
+        public CloudShadowResolutionParameter(CloudShadowResolution value, bool overrideState = false) : base(value, overrideState) { }
     }
 }

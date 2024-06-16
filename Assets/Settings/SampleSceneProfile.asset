@@ -368,6 +368,21 @@ MonoBehaviour:
   multiScattering:
     m_OverrideState: 0
     m_Value: 0.5
+  shadows:
+    m_OverrideState: 0
+    m_Value: 0
+  shadowResolution:
+    m_OverrideState: 0
+    m_Value: 256
+  shadowDistance:
+    m_OverrideState: 0
+    m_Value: 8000
+  shadowOpacity:
+    m_OverrideState: 1
+    m_Value: 0.75
+  shadowOpacityFallback:
+    m_OverrideState: 0
+    m_Value: 0
   temporalAccumulationFactor:
     m_OverrideState: 0
     m_Value: 0.95

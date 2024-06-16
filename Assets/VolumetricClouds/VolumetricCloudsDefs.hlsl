@@ -35,6 +35,7 @@ half _SunLightDimmer;
 float _EarthRadius;
 half _AccumulationFactor;
 half _NormalizationFactor;
+half _CloudNearPlane;
 CBUFFER_END
 
 #endif
