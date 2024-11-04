@@ -236,7 +236,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         if (volumetricCloudsAmbientPass == null)
         {
             volumetricCloudsAmbientPass = new(material);
-            volumetricCloudsAmbientPass.renderPassEvent = RenderPassEvent.AfterRenderingPrePasses + 1;
+            volumetricCloudsAmbientPass.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents - 1;
         }
 
         if (volumetricCloudsShadowsPass == null)
