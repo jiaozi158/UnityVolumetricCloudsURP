@@ -47,21 +47,31 @@ Shader "Hidden/Sky/VolumetricClouds"
     {
         Cull Off ZWrite Off ZTest Always
 
+        // Pass 0: Volumetric Clouds
+        // Pass 1: Upscale + Combine
+        // Pass 2: Prepare Denoising
+        // Pass 3: Temporal Denoising
+        // Pass 4: Volumetric Clouds Shadows
+        // Pass 5: Shadows Filtering
+        // Pass 6: Testing (output to scene depth)
+        // Pass 7: Upscale + Combine (Physically Based Sky)
+
         Pass
         {
             Name "Volumetric Clouds"
-			Tags { "LightMode" = "Volumetric Clouds" }
+            // Disable material preview to avoid render graph warning of accessing textures outside the render pass
+            Tags { "LightMode" = "Volumetric Clouds" "PreviewType" = "None" }
 
             Blend One Zero
 			
-			HLSLPROGRAM
-			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-			// The Blit.hlsl file provides the vertex shader (Vert),
-			// input structure (Attributes) and output structure (Varyings)
-			#include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+            HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            // The Blit.hlsl file provides the vertex shader (Vert),
+            // input structure (Attributes) and output structure (Varyings)
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 			
-			#pragma vertex Vert
-			#pragma fragment frag
+            #pragma vertex Vert
+            #pragma fragment frag
 
             #pragma target 3.5
             
@@ -71,6 +81,7 @@ Shader "Hidden/Sky/VolumetricClouds"
             TEXTURE3D(_ErosionNoise);
             TEXTURECUBE(_VolumetricCloudsAmbientProbe);
 
+            SAMPLER(s_point_clamp_sampler);
             SAMPLER(s_linear_repeat_sampler);
             SAMPLER(s_trilinear_repeat_sampler);
             SAMPLER(sampler_VolumetricCloudsAmbientProbe);
@@ -80,8 +91,17 @@ Shader "Hidden/Sky/VolumetricClouds"
             #pragma multi_compile_local_fragment _ _LOCAL_VOLUMETRIC_CLOUDS
             #pragma multi_compile_local_fragment _ _OUTPUT_CLOUDS_DEPTH
             #pragma multi_compile_local_fragment _ _PHYSICALLY_BASED_SUN
+            #pragma multi_compile_local_fragment _ _PERCEPTUAL_BLENDING
+
+            #pragma multi_compile_fragment _ PHYSICALLY_BASED_SKY
 
             #include "./VolumetricClouds.hlsl"
+
+            #define RAW_FAR_CLIP_THRESHOLD 1e-7
+
+            #ifndef sampler_CameraDepthTexture
+            #define sampler_CameraDepthTexture sampler_PointClamp
+            #endif
             
         #if defined(_OUTPUT_CLOUDS_DEPTH)
             void frag(Varyings input, out half4 cloudsColor : SV_Target0, out float cloudsDepth : SV_Target1)
@@ -97,9 +117,13 @@ Shader "Hidden/Sky/VolumetricClouds"
                 cloudsDepth = UNITY_RAW_FAR_CLIP_VALUE;
             #endif
 
-                float depth = SAMPLE_TEXTURE2D_X_LOD(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV, 0).r;
                 // If the current pixel is sky
-                bool isOccluded = depth != UNITY_RAW_FAR_CLIP_VALUE;
+                float depth = SAMPLE_TEXTURE2D_X_LOD(_CameraDepthTexture, sampler_CameraDepthTexture, screenUV, 0).r;
+
+                // It seems that some developers use shader graph to create the skybox, but cannot disable depth write due to Unity (shader graph) issue
+                // For better compatibility with different skybox shaders, we add a depth comparision threshold
+                bool isOccluded = abs(depth - UNITY_RAW_FAR_CLIP_VALUE) > RAW_FAR_CLIP_THRESHOLD;
+                //bool isOccluded = depth != UNITY_RAW_FAR_CLIP_VALUE;
 
             #ifndef _LOCAL_VOLUMETRIC_CLOUDS
                 // Exit if object is in front of the global cloud.
@@ -127,9 +151,20 @@ Shader "Hidden/Sky/VolumetricClouds"
 
                 cloudsColor = half4(rayHit.inScattering.xyz, rayHit.transmittance);
 
+                // Perceptual Blending
+            #if defined(_PERCEPTUAL_BLENDING)
+                half3 sceneColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, s_point_clamp_sampler, screenUV, 0).rgb;
+                cloudsColor.a = EvaluateFinalTransmittance(sceneColor.rgb, cloudsColor.a);
+            #endif
+
             #if defined(_OUTPUT_CLOUDS_DEPTH)
                 float3 cloudPosWS = GetCameraPositionWS() + rayHit.meanDistance * invViewDirWS;
-                cloudsDepth = rayHit.invalidRay || cloudsColor.a >= 0.2 ? UNITY_RAW_FAR_CLIP_VALUE : TransformWorldToHClip(cloudPosWS).z;
+                float4 cloudPosCS = TransformWorldToHClip(cloudPosWS);
+                cloudPosCS.z /= cloudPosCS.w;
+                cloudsDepth = rayHit.invalidRay ? UNITY_RAW_FAR_CLIP_VALUE : cloudPosCS.z;
+
+                float cloudDepth = rayHit.meanDistance * dot(ray.direction, -UNITY_MATRIX_V[2].xyz); // Distance to depth
+                //cloudsDepth = rayHit.invalidRay ? UNITY_RAW_FAR_CLIP_VALUE : EncodeInfiniteDepth(cloudDepth, _CloudNearPlane);
             #endif
 
                 return;
@@ -142,21 +177,21 @@ Shader "Hidden/Sky/VolumetricClouds"
             Name "Volumetric Clouds Combine"
 			Tags { "LightMode" = "Volumetric Clouds" }
 
-            Blend One OneMinusSrcAlpha, Zero One
+            Blend One SrcAlpha, Zero One
 			
-			HLSLPROGRAM
-			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-			// The Blit.hlsl file provides the vertex shader (Vert),
-			// input structure (Attributes) and output structure (Varyings)
-			#include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+            HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            // The Blit.hlsl file provides the vertex shader (Vert),
+            // input structure (Attributes) and output structure (Varyings)
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 			
-			#pragma vertex Vert
-			#pragma fragment frag
+            #pragma vertex Vert
+            #pragma fragment frag
 
             #pragma target 3.5
 
-            TEXTURE2D_X(_VolumetricCloudsColorTexture);
-            float4 _VolumetricCloudsColorTexture_TexelSize;
+            TEXTURE2D_X(_VolumetricCloudsLightingTexture);
+            float4 _VolumetricCloudsLightingTexture_TexelSize;
 
             // URP pre-defined the following variable on 2023.2+.
         #if UNITY_VERSION < 202320
@@ -177,10 +212,10 @@ Shader "Hidden/Sky/VolumetricClouds"
             #ifdef _LOW_RESOLUTION_CLOUDS
                 half4 cloudsColor = BilateralUpscale(screenUV);
             #else
-                half4 cloudsColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, screenUV, 0).rgba;
+                half4 cloudsColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsLightingTexture, s_linear_clamp_sampler, screenUV, 0).rgba;
             #endif
 
-                return half4(cloudsColor.xyz, 1.0 - cloudsColor.w);
+                return half4(cloudsColor.xyz, cloudsColor.w);
             }
             ENDHLSL
         }
@@ -188,23 +223,23 @@ Shader "Hidden/Sky/VolumetricClouds"
         Pass
         {
             Name "Volumetric Clouds Blit"
-			Tags { "LightMode" = "Volumetric Clouds" }
+            Tags { "LightMode" = "Volumetric Clouds" }
 
             Blend One Zero
 			
-			HLSLPROGRAM
-			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-			// The Blit.hlsl file provides the vertex shader (Vert),
-			// input structure (Attributes) and output structure (Varyings)
-			#include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+            HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            // The Blit.hlsl file provides the vertex shader (Vert),
+            // input structure (Attributes) and output structure (Varyings)
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 			
-			#pragma vertex Vert
-			#pragma fragment frag
+            #pragma vertex Vert
+            #pragma fragment frag
 
             #pragma target 3.5
             
-            TEXTURE2D_X(_VolumetricCloudsColorTexture);
-            float4 _VolumetricCloudsColorTexture_TexelSize;
+            TEXTURE2D_X(_VolumetricCloudsLightingTexture);
+            float4 _VolumetricCloudsLightingTexture_TexelSize;
 
             SAMPLER(s_linear_clamp_sampler);
 
@@ -222,7 +257,7 @@ Shader "Hidden/Sky/VolumetricClouds"
             #ifdef _LOW_RESOLUTION_CLOUDS
                 half transmittance = BilateralUpscaleTransmittance(screenUV);
             #else
-                half transmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, screenUV, 0).a;
+                half transmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsLightingTexture, s_linear_clamp_sampler, screenUV, 0).a;
             #endif
 
                 // The camera color buffer (_BlitTexture) may not have an alpha channel (32 Bits)
@@ -235,19 +270,19 @@ Shader "Hidden/Sky/VolumetricClouds"
         Pass
         {
             Name "Volumetric Clouds Denoise"
-			Tags { "LightMode" = "Volumetric Clouds" }
+            Tags { "LightMode" = "Volumetric Clouds" }
 
             Blend SrcAlpha OneMinusSrcAlpha, Zero One
 			
-			HLSLPROGRAM
-			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
-			// The Blit.hlsl file provides the vertex shader (Vert),
-			// input structure (Attributes) and output structure (Varyings)
-			#include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+            // The Blit.hlsl file provides the vertex shader (Vert),
+            // input structure (Attributes) and output structure (Varyings)
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 			
-			#pragma vertex Vert
-			#pragma fragment frag
+            #pragma vertex Vert
+            #pragma fragment frag
 
             #pragma target 3.5
 
@@ -255,7 +290,7 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma multi_compile_local_fragment _ _LOCAL_VOLUMETRIC_CLOUDS
 
-            TEXTURE2D_X(_VolumetricCloudsColorTexture);
+            TEXTURE2D_X(_VolumetricCloudsLightingTexture);
             TEXTURE2D_X(_VolumetricCloudsHistoryTexture);
 
             SAMPLER(s_point_clamp_sampler);
@@ -397,8 +432,8 @@ Shader "Hidden/Sky/VolumetricClouds"
             SAMPLER(s_trilinear_repeat_sampler);
             SAMPLER(sampler_VolumetricCloudsAmbientProbe);
 
-            TEXTURE2D_X(_VolumetricCloudsColorTexture);
-            float4 _VolumetricCloudsColorTexture_TexelSize;
+            TEXTURE2D_X(_VolumetricCloudsLightingTexture);
+            float4 _VolumetricCloudsLightingTexture_TexelSize;
 
             SAMPLER(s_linear_clamp_sampler);
 
@@ -414,18 +449,18 @@ Shader "Hidden/Sky/VolumetricClouds"
         Pass
         {
             Name "Volumetric Clouds Shadows Filtering"
-			Tags { "LightMode" = "Volumetric Clouds" }
+            Tags { "LightMode" = "Volumetric Clouds" }
 
             Blend One Zero
 			
-			HLSLPROGRAM
-			#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-			// The Blit.hlsl file provides the vertex shader (Vert),
-			// input structure (Attributes) and output structure (Varyings)
-			#include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+            HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            // The Blit.hlsl file provides the vertex shader (Vert),
+            // input structure (Attributes) and output structure (Varyings)
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 			
-			#pragma vertex Vert
-			#pragma fragment FilterVolumetricCloudsShadow
+            #pragma vertex Vert
+            #pragma fragment FilterVolumetricCloudsShadow
 
             #pragma target 3.5
 
@@ -439,8 +474,8 @@ Shader "Hidden/Sky/VolumetricClouds"
             SAMPLER(s_trilinear_repeat_sampler);
             SAMPLER(sampler_VolumetricCloudsAmbientProbe);
             
-            TEXTURE2D_X(_VolumetricCloudsColorTexture);
-            float4 _VolumetricCloudsColorTexture_TexelSize;
+            TEXTURE2D_X(_VolumetricCloudsLightingTexture);
+            float4 _VolumetricCloudsLightingTexture_TexelSize;
 
             SAMPLER(s_linear_clamp_sampler);
 
@@ -450,6 +485,150 @@ Shader "Hidden/Sky/VolumetricClouds"
         #endif
 
             #include "./VolumetricCloudsShadows.hlsl"
+            ENDHLSL
+        }
+
+        // TODO: outputs volumetric clouds depth to the "_CameraDepthTexture"
+        Pass
+        {
+            Name "Volumetric Clouds Update Depth"
+            Tags { "LightMode" = "Volumetric Clouds" }
+
+            Blend One Zero
+			
+            HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            // The Blit.hlsl file provides the vertex shader (Vert),
+            // input structure (Attributes) and output structure (Varyings)
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+			
+            #pragma vertex Vert
+            #pragma fragment frag
+
+            #pragma target 3.5
+
+            TEXTURE2D_X(_VolumetricCloudsDepthTexture);
+            float4 _VolumetricCloudsDepthTexture_TexelSize;
+
+            // URP pre-defined the following variable on 2023.2+.
+        #if UNITY_VERSION < 202320
+            float4 _BlitTexture_TexelSize;
+        #endif
+
+            SAMPLER(s_point_clamp_sampler);
+
+            #pragma multi_compile_local_fragment _ _LOW_RESOLUTION_CLOUDS
+
+            //#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+            
+            float frag(Varyings input) : SV_Target
+            {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+                float2 screenUV = input.texcoord;
+
+                float sceneDepth = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, s_point_clamp_sampler, screenUV, 0).r;
+
+                float cloudsDepth = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsDepthTexture, s_point_clamp_sampler, screenUV, 0).r;
+
+            #if !UNITY_REVERSED_Z
+                return min(cloudsDepth, sceneDepth);
+            #else
+                return max(cloudsDepth, sceneDepth);
+            #endif
+            }
+            ENDHLSL
+        }
+
+        Pass
+        {
+            // Skip compiling this pass if PBSky is not installed
+            PackageRequirements { "com.jiaozi158.unity-physically-based-sky-urp": "1.0.0" }
+
+            Name "Volumetric Clouds Combine"
+            Tags { "LightMode" = "Volumetric Clouds" }
+
+            Blend One SrcAlpha, Zero One
+
+            HLSLPROGRAM
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            // The Blit.hlsl file provides the vertex shader (Vert),
+            // input structure (Attributes) and output structure (Varyings)
+            #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
+
+            #pragma vertex Vert
+            #pragma fragment frag
+
+            #pragma target 3.5
+
+            TEXTURE2D_X(_VolumetricCloudsLightingTexture);
+            float4 _VolumetricCloudsLightingTexture_TexelSize;
+
+            // URP pre-defined the following variable on 2023.2+.
+        #if UNITY_VERSION < 202320
+            float4 _BlitTexture_TexelSize;
+        #endif
+
+            half _EnableAtmosphericScattering;
+
+            SAMPLER(s_point_clamp_sampler);
+
+        #ifndef PHYSICALLY_BASED_SKY
+            SAMPLER(s_linear_clamp_sampler);
+        #endif
+
+            TEXTURE2D_X_FLOAT(_VolumetricCloudsDepthTexture);
+
+            #pragma multi_compile_local_fragment _ _LOW_RESOLUTION_CLOUDS
+            #pragma multi_compile_local_fragment _ _OUTPUT_CLOUDS_DEPTH
+
+            #pragma multi_compile_fragment _ PHYSICALLY_BASED_SKY
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+
+        #if defined(PHYSICALLY_BASED_SKY)
+            #include "Packages/com.jiaozi158.unity-physically-based-sky-urp/Shaders/PhysicallyBasedSkyRendering.hlsl"
+            #include "Packages/com.jiaozi158.unity-physically-based-sky-urp/Shaders/PhysicallyBasedSkyEvaluation.hlsl"
+            #include "Packages/com.jiaozi158.unity-physically-based-sky-urp/Shaders/AtmosphericScattering.hlsl"
+        #endif
+
+            #include "./VolumetricCloudsDefs.hlsl"
+            #include "./VolumetricCloudsUpscale.hlsl"
+
+            half4 frag(Varyings input) : SV_Target
+            {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+                float2 screenUV = input.texcoord;
+
+            #ifdef _LOW_RESOLUTION_CLOUDS
+                half4 cloudsColor = BilateralUpscale(screenUV);
+            #else
+                half4 cloudsColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsLightingTexture, s_linear_clamp_sampler, screenUV, 0).rgba;
+            #endif
+
+            #ifdef PHYSICALLY_BASED_SKY
+                if (_EnableAtmosphericScattering)
+                {
+                    // We don't force enabling clouds depth, but it's required for physically "correct" results
+                #ifdef _OUTPUT_CLOUDS_DEPTH
+                    float depth = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsDepthTexture, s_point_clamp_sampler, screenUV, 0).r;
+                #else
+                    float depth = UNITY_RAW_FAR_CLIP_VALUE;
+                #endif
+
+                    PositionInputs posInput = GetPositionInput(input.positionCS.xy, _ScreenSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V);
+
+                    half3 V = normalize(GetCameraPositionWS() - posInput.positionWS);
+
+                    half3 volColor, volOpacity = 0.0;
+
+                    EvaluateAtmosphericScattering(posInput, V, volColor, volOpacity);
+
+                    cloudsColor.xyz = volColor * (1.0 - cloudsColor.w) + (1.0 - volOpacity) * cloudsColor.xyz;
+                }
+            #endif
+
+                return half4(cloudsColor.xyz, cloudsColor.w);
+            }
             ENDHLSL
         }
     }

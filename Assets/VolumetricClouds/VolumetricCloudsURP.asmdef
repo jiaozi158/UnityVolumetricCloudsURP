@@ -1,0 +1,25 @@
+{
+    "name": "VolumetricCloudsURP",
+    "rootNamespace": "",
+    "references": [
+        "GUID:df380645f10b7bc4b97d4f5eb6303d95",
+        "GUID:15fc0a57446b3144c949da3e2b9737a9",
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:df833852e432e964ba35e02ff0ed74a0"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.jiaozi158.unity-physically-based-sky-urp",
+            "expression": "1.0.0",
+            "define": "URP_PBSKY"
+        }
+    ],
+    "noEngineReferences": false
+}

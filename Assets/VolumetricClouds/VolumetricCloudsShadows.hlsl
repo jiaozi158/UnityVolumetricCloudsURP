@@ -6,6 +6,7 @@
 
 #include "./VolumetricCloudsDefs.hlsl"
 #include "./VolumetricCloudsUtilities.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/GeometricTools.hlsl"
 
 TEXTURE2D(_VolumetricCloudsShadow);
 
@@ -27,31 +28,32 @@ half3 TraceVolumetricCloudsShadows(Varyings input) : SV_Target
 
     // Compute the origin of the ray properties in the planet space
     float3 rayOriginPS = _CloudShadowSunOrigin.xyz + (normalizedCoord.x * _CloudShadowSunRight.xyz + normalizedCoord.y * _CloudShadowSunUp.xyz);
-    half3 rayDirection = _CloudShadowSunForward.xyz;
+    half3 rayDirection = -_CloudShadowSunForward.xyz;
 
     // Compute the attenuation
     half transmittance = 1.0;
     float closestDistance = FLT_MAX;
-    float farthestDistance = 0.0;
+    float farthestDistance = FLT_MIN;
     bool validShadow = false;
 
     // Intersect the outer sphere
-    float radialDistance = length(rayOriginPS);
-    float cosChi = dot(rayOriginPS, rayDirection) * rcp(radialDistance);
-    float2 tInner = IntersectSphere(_LowestCloudAltitude, cosChi, radialDistance);
-    float2 tOuter = IntersectSphere(_HighestCloudAltitude, cosChi, radialDistance);
-    if (tInner.y >= 0.0 && tOuter.y >= 0.0)
+    float2 lowestAltitudeIntersections, highestAltitudeIntersections;
+    bool lowBoundOk = IntersectRaySphere(rayOriginPS, rayDirection, _LowestCloudAltitude, lowestAltitudeIntersections);
+    bool highBoundOk = IntersectRaySphere(rayOriginPS, rayDirection, _HighestCloudAltitude, highestAltitudeIntersections);
+
+    if (lowBoundOk && highBoundOk)
     {
         // Compute the integration range
-        float startDistance = tInner.y;
-        float totalDistance = tOuter.y - tInner.y;
+        float startDistance = highestAltitudeIntersections.x;
+        float totalDistance = max(lowestAltitudeIntersections.x - highestAltitudeIntersections.x, highestAltitudeIntersections.x - lowestAltitudeIntersections.x);
+        rayOriginPS += startDistance * rayDirection;
 
         float stepSize = totalDistance / 16;
 
         for (int i = 1; i < 16; ++i)
         {
             // Compute the sphere intersection position
-            float dist = (startDistance + stepSize * i);
+            float dist = (stepSize * i);
             float3 positionPS = rayOriginPS + rayDirection * dist;
 
             // Get the coverage at intersection point
@@ -68,8 +70,8 @@ half3 TraceVolumetricCloudsShadows(Varyings input) : SV_Target
             if (cloudProperties.density > CLOUD_DENSITY_TRESHOLD)
             {
                 // Apply the extinction
-                closestDistance = min(closestDistance, startDistance + stepSize * (i - 1));
-                farthestDistance = max(farthestDistance, startDistance + stepSize * i);
+                closestDistance = min(closestDistance, totalDistance - stepSize * (i + 1));
+                farthestDistance = max(farthestDistance, totalDistance - stepSize * i);
                 const half3 currentStepExtinction = exp(-_ScatteringTint.xyz * cloudProperties.density * cloudProperties.sigmaT * stepSize);
                 transmittance *= Luminance(currentStepExtinction);
                 validShadow = true;
@@ -83,18 +85,21 @@ half3 TraceVolumetricCloudsShadows(Varyings input) : SV_Target
 
     /*
     // Evaluate the shadow
-    float2 distances = validShadow ? float2(1.0 / closestDistance, 1.0 / farthestDistance) : float2(0.0, 0.0);
+    float2 distances = validShadow ? float2(closestDistance, farthestDistance) : float2(0.0, 0.0);
 
     // This should be the world position of the shading point in object's shader.
     // We use a user defined shadow receiving plane here.
     float3 positionWS = float3(_VolumetricCloudsShadowOriginToggle.x, _ShadowPlaneOffset, _VolumetricCloudsShadowOriginToggle.z);
 
     // Compute the vector from the shadow origin to the point to shade
-    float3 shadowOriginVec = positionWS - _VolumetricCloudsShadowOriginToggle.xyz;
+    //float3 shadowOriginVec = positionWS - _VolumetricCloudsShadowOriginToggle.xyz;
     //float zCoord = dot(shadowOriginVec, _CloudShadowSunForward.xyz);
-    float zCoord = _ShadowPlaneOffset - _VolumetricCloudsShadowOriginToggle.y;
+    //float zCoord = _ShadowPlaneOffset - _VolumetricCloudsShadowOriginToggle.y;
+    float2 lowCloudsIntersections;
+    IntersectRaySphere(positionWS - _PlanetCenterPosition, light.forward, _PlanetaryRadius + _VolumetricCloudsBottomAltitude, lowCloudsIntersections);
+    float zCoord = lowCloudsIntersections.x;
 
-    half shadowRange = saturate((1.0 / zCoord - distances.x) / (distances.y - distances.x));
+    half shadowRange = saturate((zCoord - distances.x) / (distances.y - distances.x));
     shadows = shadows != 1.0 ? lerp(shadows, 1.0, shadowRange) : 1.0;
     */
 

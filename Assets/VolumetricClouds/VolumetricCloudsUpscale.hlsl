@@ -16,8 +16,8 @@ half Weight(half distance)
 half4 BilateralUpscale(float2 screenUV)
 {
     // Calculate the current screenUV in a low resolution texture.
-    float2 offsetUV = (floor(screenUV * _VolumetricCloudsColorTexture_TexelSize.zw) + 0.5) * _VolumetricCloudsColorTexture_TexelSize.xy;
-    half4 centerColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, screenUV, 0).rgba;
+    float2 offsetUV = (floor(screenUV * _VolumetricCloudsLightingTexture_TexelSize.zw) + 0.5) * _VolumetricCloudsLightingTexture_TexelSize.xy;
+    half4 centerColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsLightingTexture, s_linear_clamp_sampler, screenUV, 0).rgba;
 
     half4 resultColor = half4(0.0, 0.0, 0.0, 0.0);
     half normalization = 0.0;
@@ -26,7 +26,7 @@ half4 BilateralUpscale(float2 screenUV)
     {
         for (int j = -KERNEL_SIZE; j <= KERNEL_SIZE; j++)
         {
-            half4 neighborColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, offsetUV + float2(i, j) * _VolumetricCloudsColorTexture_TexelSize.xy, 0).rgba;
+            half4 neighborColor = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsLightingTexture, s_linear_clamp_sampler, offsetUV + float2(i, j) * _VolumetricCloudsLightingTexture_TexelSize.xy, 0).rgba;
 
             half2 distance = (screenUV - offsetUV) * _ScreenParams.xy;
 
@@ -47,8 +47,8 @@ half4 BilateralUpscale(float2 screenUV)
 half BilateralUpscaleTransmittance(float2 screenUV)
 {
     // Calculate the current screenUV in a low resolution texture.
-    float2 offsetUV = (floor(screenUV * _VolumetricCloudsColorTexture_TexelSize.zw) + 0.5) * _VolumetricCloudsColorTexture_TexelSize.xy;
-    half centerTransmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, screenUV, 0).a;
+    float2 offsetUV = (floor(screenUV * _VolumetricCloudsLightingTexture_TexelSize.zw) + 0.5) * _VolumetricCloudsLightingTexture_TexelSize.xy;
+    half centerTransmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsLightingTexture, s_linear_clamp_sampler, screenUV, 0).a;
 
     half resultTransmittance = 0.0;
     half normalization = 0.0;
@@ -57,7 +57,7 @@ half BilateralUpscaleTransmittance(float2 screenUV)
     {
         for (int j = -KERNEL_SIZE; j <= KERNEL_SIZE; j++)
         {
-            half neighborTransmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsColorTexture, s_linear_clamp_sampler, offsetUV + float2(i, j) * _VolumetricCloudsColorTexture_TexelSize.xy, 0).a;
+            half neighborTransmittance = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsLightingTexture, s_linear_clamp_sampler, offsetUV + float2(i, j) * _VolumetricCloudsLightingTexture_TexelSize.xy, 0).a;
 
             half2 distance = (screenUV - offsetUV) * _ScreenParams.xy;
 

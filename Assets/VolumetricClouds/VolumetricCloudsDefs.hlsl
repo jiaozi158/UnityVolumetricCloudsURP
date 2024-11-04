@@ -38,4 +38,8 @@ half _NormalizationFactor;
 half _CloudNearPlane;
 CBUFFER_END
 
+half _ImprovedTransmittanceBlend;
+
+half3 _SunColor;
+
 #endif

@@ -127,7 +127,7 @@ MonoBehaviour:
     m_Value: 4
   densityMultiplier:
     m_OverrideState: 1
-    m_Value: 0.316
+    m_Value: 0.33
   densityCurve:
     m_OverrideState: 1
     m_Value:
@@ -210,13 +210,13 @@ MonoBehaviour:
       m_RotationOrder: 4
   shapeFactor:
     m_OverrideState: 1
-    m_Value: 0.8
+    m_Value: 0.87
   shapeScale:
     m_OverrideState: 0
     m_Value: 5
   erosionFactor:
     m_OverrideState: 1
-    m_Value: 0.4
+    m_Value: 0.2
   erosionScale:
     m_OverrideState: 1
     m_Value: 127
@@ -329,10 +329,10 @@ MonoBehaviour:
   earthCurvature:
     m_OverrideState: 0
     m_Value: 0
-  globalOrientation:
+  globalSpeed:
     m_OverrideState: 0
     m_Value: 0
-  globalSpeed:
+  globalOrientation:
     m_OverrideState: 0
     m_Value: 0
   shapeSpeedMultiplier:
@@ -386,11 +386,14 @@ MonoBehaviour:
   temporalAccumulationFactor:
     m_OverrideState: 0
     m_Value: 0.95
+  perceptualBlending:
+    m_OverrideState: 1
+    m_Value: 0
   numPrimarySteps:
     m_OverrideState: 1
     m_Value: 32
   numLightSteps:
-    m_OverrideState: 0
+    m_OverrideState: 1
     m_Value: 1
   fadeInMode:
     m_OverrideState: 1

@@ -154,6 +154,7 @@ RayHit TraceCloudsRay(Ray ray)
                         // We reset all the counters and enable active sampling
                         currentPositionWS -= ray.direction * stepS;
                         currentDistance -= stepS;
+                        currentIndex -= 1;
                         activeSampling = true;
                         sequentialEmptySamples = 0;
                     }

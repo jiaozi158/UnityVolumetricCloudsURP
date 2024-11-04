@@ -39,9 +39,6 @@
 #define _PlanetCenterPosition float3(0.0, -_EarthRadius, 0.0)
 #define ConvertToPS(x) (x - _PlanetCenterPosition)
 
-// Used in perceptual blending, not implemented.
-#define _ImprovedTransmittanceBlend 1.0
-
 struct Ray
 {
     // Origin of the ray in world space
@@ -67,20 +64,26 @@ struct RayHit
 };
 
 // Perceptual blending
-half EvaluateFinalTransmittance(half3 color, half transmittance)
+half EvaluateFinalTransmittance(half3 sceneColor, half transmittance)
 {
     // Due to the high intensity of the sun, we often need apply the transmittance in a tonemapped space
     // As we only produce one transmittance, we evaluate the approximation on the luminance of the color
-    half luminance = Luminance(color);
+    half luminance = Luminance(sceneColor) * 0.25; // visually better for URP
 
-    // Apply the tone mapping and then the transmittance
-    half resultLuminance = luminance * rcp((1.0 + luminance) * transmittance);
+    if (luminance > 0.0)
+    {
+        // Apply the transmittance in tonemapped space
+        half resultLuminance = luminance * rcp(1.0 + luminance) * transmittance;
+        resultLuminance = resultLuminance * rcp(1.0 - resultLuminance);
 
-    // reverse the tone mapping
-    resultLuminance = resultLuminance * rcp(1.0 - resultLuminance);
+        // By softening the transmittance attenuation curve for pixels adjacent to cloud boundaries when the luminance is super high,  
+        // We can prevent sun flicker and improve perceptual blending. (https://www.desmos.com/calculator/vmly6erwdo)
+        half finalTransmittance = max(resultLuminance * rcp(luminance), pow(transmittance, 6));
 
-    // This approach only makes sense if the color is not black
-    return luminance > 0.0 ? lerp(transmittance, resultLuminance * rcp(luminance), _ImprovedTransmittanceBlend) : transmittance;
+        // This approach only makes sense if the color is not black
+        transmittance = lerp(transmittance, finalTransmittance, _ImprovedTransmittanceBlend);
+    }
+    return saturate(transmittance);
 }
 
 // These 2 functions were moved to the Core RP package by the commit below:
@@ -556,13 +559,24 @@ float ChapmanHorizontal(float z)
 }
 
 // Default atmosphere settings of HDRP physically based sky
+#if defined(PHYSICALLY_BASED_SKY)
+half _AirScaleHeight;
+half _AerosolScaleHeight;
+half _AirDensityFalloff;
+half _AerosolDensityFalloff;
+//float _AtmosphericRadius;
+#define _PlanetaryRadius _EarthRadius // TODO: unify earth radius control
+half3 _AirSeaLevelExtinction;
+half _AerosolSeaLevelExtinction;
+#else
 #define _AirScaleHeight 8000.0
 #define _AerosolScaleHeight 1200.0
 #define _AirDensityFalloff 1.0 / _AirScaleHeight
 #define _AerosolDensityFalloff 1.0 / _AerosolScaleHeight
 #define _PlanetaryRadius _EarthRadius
 #define _AirSeaLevelExtinction (half3(5.8, 13.5, 33.1) / 1000000.0)
-#define _AerosolSeaLevelExtinction -0.00001
+#define _AerosolSeaLevelExtinction 0.00001
+#endif
 
 //#define _AlphaSaturation 1.0
 //#define _AlphaMultiplier 1.0
@@ -613,7 +627,7 @@ float3 ComputeAtmosphericOpticalDepth(float r, float cosTheta, bool aboveHorizon
 }
 
 // This function evaluates the sun color attenuation from the physically based sky
-half3 EvaluateSunColorAttenuation(float3 positionPS, float3 sunDirection, bool estimatePenumbra = false)
+half3 EvaluateSunColorAttenuation(float3 positionPS, half3 sunDirection, bool estimatePenumbra = false)
 {
     float r = length(positionPS);
     float cosTheta = dot(positionPS, sunDirection) * rcp(r); // Normalize
@@ -663,7 +677,7 @@ void EvaluateCloud(CloudProperties cloudProperties, half3 rayDirection,
 
     // Evaluate the sun color at the position
 #if defined(_PHYSICALLY_BASED_SUN)
-    half3 sunColor = EvaluateSunColor(entryEvaluationPointPS, exitEvaluationPointPS, sun.direction, sun.color, relativeRayDistance);
+    half3 sunColor = EvaluateSunColor(entryEvaluationPointPS, exitEvaluationPointPS, sun.direction, _SunColor, relativeRayDistance);
 #else
     half3 sunColor = sun.color;
 #endif

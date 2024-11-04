@@ -123,16 +123,16 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     public ClampedFloatParameter earthCurvature = new(0.0f, 0.0f, 1.0f);
 
     /// <summary>
-    /// Controls the global orientation of the wind relative to the X world vector.
-    /// </summary>
-    [Header("Wind"), Tooltip("Controls the global orientation of the wind relative to the X world vector.")]
-    public ClampedFloatParameter globalOrientation = new(0.0f, 0.0f, 360.0f);
-
-    /// <summary>
     /// Sets the global horizontal wind speed in kilometers per hour.
     /// </summary>
-    [Tooltip("Sets the global horizontal wind speed in kilometers per hour.")]
+    [Header("Wind"), Tooltip("Sets the global horizontal wind speed in kilometers per hour.")]
     public FloatParameter globalSpeed = new(0.0f);
+
+    /// <summary>
+    /// Controls the global orientation of the wind relative to the X world vector.
+    /// </summary>
+    [Tooltip("Controls the global orientation of the wind relative to the X world vector.")]
+    public ClampedFloatParameter globalOrientation = new(0.0f, 0.0f, 360.0f);
 
     /// <summary>
     /// Controls the multiplier to the speed of the larger cloud shapes.
@@ -277,6 +277,12 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     public ClampedFloatParameter temporalAccumulationFactor = new(0.95f, 0.0f, 1.0f);
 
     /// <summary>
+    /// Specifies the strength of the perceptual blending for the volumetric clouds. This value should be treated as flag and only be set to 0.0 or 1.0.
+    /// </summary>
+    [Tooltip("Specifies the strength of the perceptual blending for the volumetric clouds. This value should be treated as flag and only be set to 0.0 or 1.0.")]
+    public ClampedFloatParameter perceptualBlending = new(1.0f, 0.0f, 1.0f);
+
+    /// <summary>
     /// Controls the number of steps when evaluating the clouds' transmittance. A higher value may lead to a lower noise level and longer view distance, but at a higher cost.
     /// </summary>
     [Tooltip("Controls the number of steps when evaluating the clouds' transmittance. A higher value may lead to a lower noise level and longer view distance, but at a higher cost.")]
@@ -286,7 +292,7 @@ public class VolumetricClouds : VolumeComponent, IPostProcessComponent
     /// Controls the number of steps when evaluating the clouds' lighting. A higher value will lead to smoother lighting and improved self-shadowing, but at a higher cost.
     /// </summary>
     [Tooltip("Controls the number of steps when evaluating the clouds' lighting. A higher value will lead to smoother lighting and improved self-shadowing, but at a higher cost.")]
-    public ClampedIntParameter numLightSteps = new(1, 1, 16);
+    public ClampedIntParameter numLightSteps = new(2, 1, 16);
 
     /// <summary>
     /// Controls the mode in which the clouds fade in when close to the camera's near plane.
