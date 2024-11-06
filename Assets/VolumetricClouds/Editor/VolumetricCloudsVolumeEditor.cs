@@ -102,11 +102,13 @@ class VolumetricCloudsEditor : VolumeComponentEditor
 
     const string k_VolumetricCloudsRendererFeature = "VolumetricCloudsURP";
     const string k_NoRendererFeatureMessage = "Volumetric Clouds renderer feature is disabled in the active URP renderer.";
-    const string k_RendererFeatureOffMessage = "Volumetric Clouds is disabled in the active URP renderer.";
+    const string k_RendererFeatureOffMessage = "\"Volumetric Clouds\" is disabled in the active URP renderer.";
+    const string k_RenderingDebuggerMessage = "\"Volumetric Clouds\" is disabled to avoid affecting rendering debugging.";
 
     static public readonly GUIContent k_PerceptualBlending = EditorGUIUtility.TrTextContent("Perceptual Blending", "When enabled, the clouds will blend in a perceptual way with the environment. This may cause artifacts when the sky is over-exposed.");
 
     const string k_FixButtonName = "Fix";
+    const string k_EnableButtonName = "Enable";
 
     public override void OnEnable()
     {
@@ -218,7 +220,19 @@ class VolumetricCloudsEditor : VolumeComponentEditor
             EditorGUILayout.Space();
         }
 
+        bool showDebuggerMessage = DebugManager.instance.isAnyDebugUIActive && !clouds.RenderingDebugger;
         bool enableClouds = m_Enable.value.boolValue && m_Enable.overrideState.boolValue;
+
+        if (clouds.isActive && enableClouds && showDebuggerMessage)
+        {
+            EditorGUILayout.Space();
+            CoreEditorUtils.DrawFixMeBox(k_RenderingDebuggerMessage, MessageType.Warning, k_EnableButtonName, () =>
+            {
+                clouds.RenderingDebugger = true;
+                GUIUtility.ExitGUI();
+            });
+            EditorGUILayout.Space();
+        }
 
         PropertyField(m_Enable);
         PropertyField(m_LocalClouds);

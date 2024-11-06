@@ -885,9 +885,6 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 RenderTextureFormat cloudsDepthHandleFormat = RenderTextureFormat.RFloat; // average z-depth
 
                 RenderTextureDescriptor desc = cameraData.cameraTargetDescriptor;
-                var textureDesc = passData.cameraColorHandle.GetDescriptor(renderGraph);
-                desc.height = textureDesc.height;
-                desc.width = textureDesc.width;
 
                 desc.msaaSamples = 1;
                 desc.useMipMap = false;
