@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -47,6 +48,9 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
     [Header("Depth")]
     [Tooltip("Specifies if URP outputs volumetric clouds average depth to a global shader texture named \"_VolumetricCloudsDepthTexture\".")]
     [SerializeField] private bool outputDepth = false;
+
+    [Header("Experimental"), Tooltip("Specifies if URP also outputs volumetric clouds average depth to \"_CameraDepthTexture\".")]
+    [SerializeField] private bool depthTexture = false;
 
     private const string shaderName = "Hidden/Sky/VolumetricClouds";
     private VolumetricCloudsPass volumetricCloudsPass;
@@ -171,6 +175,15 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         set { outputDepth = value; }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether URP also outputs volumetric clouds average depth to "_CameraDepthTexture".
+    /// </summary>
+    public bool OutputToSceneDepth
+    {
+        get { return depthTexture; }
+        set { depthTexture = value; }
+    }
+
     public enum CloudsRenderMode
     {
         [Tooltip("Always use Blit() to copy render textures.")]
@@ -280,7 +293,8 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             volumetricCloudsPass.dynamicAmbientProbe = dynamicAmbientProbe;
             volumetricCloudsPass.renderMode = preferredRenderMode;
             volumetricCloudsPass.resetWindOnStart = resetOnStart;
-            volumetricCloudsPass.outputDepth = outputDepth;
+            volumetricCloudsPass.outputDepth = depthTexture || outputDepth; // Implicitly enable clouds depth when we need to output to scene depth
+            volumetricCloudsPass.outputToSceneDepth = depthTexture;
             volumetricCloudsPass.sunAttenuation = sunAttenuation;
 
             volumetricCloudsShadowsPass.cloudsVolume = cloudsVolume;
@@ -328,6 +342,9 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
     public class VolumetricCloudsPass : ScriptableRenderPass
     {
+        private const string profilerTag = "Volumetric Clouds";
+        private readonly ProfilingSampler m_ProfilingSampler = new ProfilingSampler(profilerTag);
+
         public VolumetricClouds cloudsVolume;
         public CloudsRenderMode renderMode;
         public float resolutionScale;
@@ -335,6 +352,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         public bool dynamicAmbientProbe;
         public bool resetWindOnStart;
         public bool outputDepth;
+        public bool outputToSceneDepth;
         public bool sunAttenuation;
         public bool hasAtmosphericScattering;
 
@@ -346,13 +364,11 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         private RTHandle cloudsDepthHandle;
         private RTHandle accumulateHandle;
         private RTHandle historyHandle;
+        private RTHandle cameraTempDepthHandle;
 
         private readonly Material cloudsMaterial;
 
         private readonly bool fastCopy = (SystemInfo.copyTextureSupport & CopyTextureSupport.Basic) != 0;
-
-        private const string profilerTag = "Volumetric Clouds";
-        private readonly ProfilingSampler m_ProfilingSampler = new ProfilingSampler(profilerTag);
 
         private static readonly int numPrimarySteps = Shader.PropertyToID("_NumPrimarySteps");
         private static readonly int numLightSteps = Shader.PropertyToID("_NumLightSteps");
@@ -411,6 +427,11 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
         private const string _VolumetricCloudsAccumulationTexture = "_VolumetricCloudsAccumulationTexture";
         private const string _VolumetricCloudsDepthTexture = "_VolumetricCloudsDepthTexture";
         private const string _VolumetricCloudsLightingTexture = "_VolumetricCloudsLightingTexture"; // Same as "_VolumetricCloudsColorTexture"
+        private const string _CameraTempDepthTexture = "_CameraTempDepthTexture";
+
+        private static readonly Vector4 m_ScaleBias = new Vector4(1.0f, 1.0f, 0.0f, 0.0f);
+
+        private readonly static FieldInfo depthTextureFieldInfo = typeof(UniversalRenderer).GetField("m_DepthTexture", BindingFlags.NonPublic | BindingFlags.Instance);
 
         private Texture2D customLutPresetMap;
         private readonly Color[] customLutColorArray = new Color[customLutMapResolution];
@@ -711,6 +732,12 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             RenderingUtils.ReAllocateIfNeeded(ref cloudsDepthHandle, desc, FilterMode.Point, TextureWrapMode.Clamp, name: _VolumetricCloudsDepthTexture);
         #endif
 
+        #if UNITY_6000_0_OR_NEWER
+            RenderingUtils.ReAllocateHandleIfNeeded(ref cameraTempDepthHandle, desc, FilterMode.Point, TextureWrapMode.Clamp, name: _CameraTempDepthTexture);
+        #else
+            RenderingUtils.ReAllocateIfNeeded(ref cameraTempDepthHandle, desc, FilterMode.Point, TextureWrapMode.Clamp, name: _CameraTempDepthTexture);
+        #endif
+
             cmd.SetGlobalTexture(volumetricCloudsColorTexture, cloudsColorHandle);
             cmd.SetGlobalTexture(volumetricCloudsLightingTexture, cloudsColorHandle); // Same as "_VolumetricCloudsColorTexture"
             cmd.SetGlobalTexture(volumetricCloudsDepthTexture, cloudsDepthHandle);
@@ -732,6 +759,8 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
             UpdateClouds(mainLight, renderingData.cameraData.camera);
 
+            cloudsMaterial.SetTexture(cameraDepthTexture, null); // Use global texture
+
             RTHandle cameraColorHandle = renderingData.cameraData.renderer.cameraColorTargetHandle;
 
             CommandBuffer cmd = CommandBufferPool.Get();
@@ -746,7 +775,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                     // RT-1: clouds lighting
                     // RT-2: clouds depth
                     cmd.SetRenderTarget(cloudsHandles, cloudsDepthHandle);
-                    Blitter.BlitTexture(cmd, cameraColorHandle, new Vector4(1.0f, 1.0f, 0.0f, 0.0f), cloudsMaterial, pass: 0);
+                    Blitter.BlitTexture(cmd, cameraColorHandle, m_ScaleBias, cloudsMaterial, pass: 0);
                 }
                 else
                 {
@@ -755,7 +784,20 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
                 // Clouds Upscale & Combine
                 Blitter.BlitCameraTexture(cmd, cameraColorHandle, cameraColorHandle, cloudsMaterial, pass: hasAtmosphericScattering ? 7 : 1);
-                
+
+                if (outputToSceneDepth)
+                {
+                    // Using reflection to access the "_CameraDepthTexture" in compatibility mode
+                    var renderer = renderingData.cameraData.renderer as UniversalRenderer;
+                    var cameraDepthHandle = depthTextureFieldInfo.GetValue(renderer) as RTHandle;
+
+                    Blitter.BlitCameraTexture(cmd, cameraDepthHandle, cameraTempDepthHandle);
+
+                    // Handle both R32 and D32 texture format
+                    cmd.SetRenderTarget(cameraDepthHandle, cameraDepthHandle);
+                    Blitter.BlitTexture(cmd, cameraTempDepthHandle, m_ScaleBias,cloudsMaterial, pass: 6);
+                }
+
                 if (denoiseClouds)
                 {
                     // Prepare Temporal Reprojection (copy source buffer: colorHandle.rgb + cloudsColorHandle.a)
@@ -805,6 +847,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             internal bool denoiseClouds;
             internal bool dynamicAmbientProbe;
             internal bool outputDepth;
+            internal bool outputToSceneDepth;
             internal bool hasAtmosphericScattering;
 
             internal RenderTargetIdentifier[] cloudsHandles;
@@ -815,6 +858,8 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             internal TextureHandle cloudsDepthHandle;
             internal TextureHandle accumulateHandle;
             internal TextureHandle historyHandle;
+
+            internal TextureHandle cameraTempDepthHandle;
         }
 
         // This static method is used to execute the pass and passed as the RenderFunc delegate to the RenderGraph render pass
@@ -833,7 +878,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 // RT-1: clouds lighting
                 // RT-2: clouds depth
                 context.cmd.SetRenderTarget(data.cloudsHandles, data.cloudsDepthHandle);
-                Blitter.BlitTexture(cmd, data.cameraColorHandle, new Vector4(1.0f, 1.0f, 0.0f, 0.0f), data.cloudsMaterial, pass: 0);
+                Blitter.BlitTexture(cmd, data.cameraColorHandle, m_ScaleBias, data.cloudsMaterial, pass: 0);
             }
             else
             {
@@ -842,6 +887,15 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
 
             // Clouds Upscale & Combine
             Blitter.BlitCameraTexture(cmd, data.cloudsColorHandle, data.cameraColorHandle, data.cloudsMaterial, pass: data.hasAtmosphericScattering ? 7 : 1);
+
+            if (data.outputToSceneDepth)
+            {
+                Blitter.BlitCameraTexture(cmd, data.cameraDepthHandle, data.cameraTempDepthHandle);
+
+                // Handle both R32 and D32 texture format
+                context.cmd.SetRenderTarget(data.cameraDepthHandle, data.cameraDepthHandle);
+                Blitter.BlitTexture(cmd, data.cameraTempDepthHandle, m_ScaleBias, data.cloudsMaterial, pass: 6);
+            }
 
             if (data.denoiseClouds)
             {
@@ -894,6 +948,9 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 TextureHandle accumulateHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, desc, name: _VolumetricCloudsAccumulationTexture, false, FilterMode.Point, TextureWrapMode.Clamp);
                 TextureHandle historyHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, desc, name: _VolumetricCloudsHistoryTexture, false, FilterMode.Point, TextureWrapMode.Clamp);
 
+                // Full resolution camera texture descriptor
+                RenderTextureDescriptor tempDepthDesc = desc;
+
                 desc.width = (int)(desc.width * resolutionScale);
                 desc.height = (int)(desc.height * resolutionScale);
                 RenderingUtils.ReAllocateHandleIfNeeded(ref cloudsColorHandle, desc, FilterMode.Bilinear, TextureWrapMode.Clamp, name: _VolumetricCloudsLightingTexture);
@@ -915,6 +972,15 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                     builder.SetGlobalTextureAfterPass(cloudsDepthTextureHandle, volumetricCloudsDepthTexture);
                 }
 
+                if (outputToSceneDepth)
+                {
+                    tempDepthDesc.colorFormat = cloudsDepthHandleFormat;
+
+                    TextureHandle tempDepthHandle = UniversalRenderer.CreateRenderGraphTexture(renderGraph, tempDepthDesc, name: _CameraTempDepthTexture, false, FilterMode.Point, TextureWrapMode.Clamp);
+                    passData.cameraTempDepthHandle = tempDepthHandle;
+                    builder.UseTexture(passData.cameraTempDepthHandle, AccessFlags.Write);
+                }
+
                 // Fill up the passData with the data needed by the pass
                 passData.cloudsMaterial = cloudsMaterial;
                 passData.upscaleMode = upscaleMode;
@@ -923,6 +989,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 passData.denoiseClouds = denoiseClouds;
                 passData.dynamicAmbientProbe = dynamicAmbientProbe;
                 passData.outputDepth = outputDepth;
+                passData.outputToSceneDepth = outputToSceneDepth && (cameraData.camera.cameraType == CameraType.Game || cameraData.camera.cameraType == CameraType.SceneView);
                 passData.hasAtmosphericScattering = hasAtmosphericScattering;
 
                 passData.cloudsHandles = cloudsHandles;
@@ -953,6 +1020,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             cloudsDepthHandle?.Release();
             historyHandle?.Release();
             accumulateHandle?.Release();
+            cameraTempDepthHandle?.Release();
         }
         #endregion
     }

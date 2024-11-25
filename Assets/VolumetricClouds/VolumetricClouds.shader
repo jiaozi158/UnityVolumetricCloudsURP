@@ -93,8 +93,6 @@ Shader "Hidden/Sky/VolumetricClouds"
             #pragma multi_compile_local_fragment _ _PHYSICALLY_BASED_SUN
             #pragma multi_compile_local_fragment _ _PERCEPTUAL_BLENDING
 
-            #pragma multi_compile_fragment _ PHYSICALLY_BASED_SKY
-
             #include "./VolumetricClouds.hlsl"
 
             #define RAW_FAR_CLIP_THRESHOLD 1e-7
@@ -494,6 +492,8 @@ Shader "Hidden/Sky/VolumetricClouds"
             Name "Volumetric Clouds Update Depth"
             Tags { "LightMode" = "Volumetric Clouds" }
 
+            ZWrite On
+            ColorMask R
             Blend One Zero
 			
             HLSLPROGRAM
@@ -517,11 +517,9 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             SAMPLER(s_point_clamp_sampler);
 
-            #pragma multi_compile_local_fragment _ _LOW_RESOLUTION_CLOUDS
-
             //#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             
-            float frag(Varyings input) : SV_Target
+            float frag(Varyings input, out float depth : SV_Depth) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 float2 screenUV = input.texcoord;
@@ -531,10 +529,11 @@ Shader "Hidden/Sky/VolumetricClouds"
                 float cloudsDepth = SAMPLE_TEXTURE2D_X_LOD(_VolumetricCloudsDepthTexture, s_point_clamp_sampler, screenUV, 0).r;
 
             #if !UNITY_REVERSED_Z
-                return min(cloudsDepth, sceneDepth);
+                depth = min(cloudsDepth, sceneDepth);
             #else
-                return max(cloudsDepth, sceneDepth);
+                depth = max(cloudsDepth, sceneDepth);
             #endif
+                return depth;
             }
             ENDHLSL
         }
