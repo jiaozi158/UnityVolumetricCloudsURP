@@ -81,7 +81,8 @@ half3 TraceVolumetricCloudsShadows(Varyings input) : SV_Target
     // If we didn't manage to hit a non null density, we need to fix the distances
     //half4 result = validShadow ? half4(1.0 / closestDistance, lerp(1.0 - _ShadowIntensity, 1.0, transmittance), 1.0 / farthestDistance, 1.0) : half4(0.0, 1.0, 0.0, 0.0);
     
-    half shadows = lerp(1.0 - _ShadowIntensity, 1.0, transmittance);
+    //half shadows = lerp(1.0 - _ShadowIntensity, 1.0, transmittance);
+    half shadows = lerp(1.0 - _ShadowIntensity, 1.0, saturate(transmittance - 0.05));
 
     /*
     // Evaluate the shadow
@@ -134,7 +135,7 @@ half3 FilterVolumetricCloudsShadow(Varyings input) : SV_Target
 
             // Read the shadow data from the texture
             float2 offsetUV = normalizedCoord + float2(x, y) * _BlitTexture_TexelSize.xy;
-            half3 shadowData = SAMPLE_TEXTURE2D_LOD(_BlitTexture, s_linear_clamp_sampler, offsetUV, 0).xyz;
+            half3 shadowData = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, s_linear_clamp_sampler, offsetUV, 0).xyz;
 
             // here, we only take into account shadow distance data if transmission is not 1.0
             /*if (shadowData.y != 1.0)

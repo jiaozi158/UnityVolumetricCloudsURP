@@ -4,9 +4,9 @@
 #include "./VolumetricCloudsDefs.hlsl"
 #include "./VolumetricCloudsUtilities.hlsl"
 
-Ray BuildCloudsRay(float2 screenUV, float depth, half3 invViewDirWS, bool isOccluded)
+CloudRay BuildCloudsRay(float2 screenUV, float depth, half3 invViewDirWS, bool isOccluded)
 {
-    Ray ray;
+    CloudRay ray;
 
 #ifdef _LOCAL_VOLUMETRIC_CLOUDS
     ray.originWS = GetCameraPositionWS();
@@ -31,37 +31,39 @@ Ray BuildCloudsRay(float2 screenUV, float depth, half3 invViewDirWS, bool isOccl
     return ray;
 }
 
-RayHit TraceCloudsRay(Ray ray)
+VolumetricRayResult TraceVolumetricRay(CloudRay cloudRay)
 {
-    RayHit rayHit;
-    rayHit.inScattering = half3(0.0, 0.0, 0.0);
-    rayHit.transmittance = 1.0;
-    rayHit.meanDistance = FLT_MAX;
-    rayHit.invalidRay = true;
+    // Initiliaze the volumetric ray
+    VolumetricRayResult volumetricRay;
+    volumetricRay.scattering = 0.0;
+    volumetricRay.ambient = 0.0;
+    volumetricRay.transmittance = 1.0;
+    volumetricRay.meanDistance = FLT_MAX;
+    volumetricRay.invalidRay = true;
 
     // Determine if ray intersects bounding volume, if the ray does not intersect the cloud volume AABB, skip right away
     RayMarchRange rayMarchRange;
-    if (GetCloudVolumeIntersection(ray.originWS, ray.direction, rayMarchRange))
+    if (GetCloudVolumeIntersection(cloudRay.originWS, cloudRay.direction, rayMarchRange))
     {
-        if (ray.maxRayLength >= rayMarchRange.start)
+        if (cloudRay.maxRayLength >= rayMarchRange.start)
         {
             // Initialize the depth for accumulation
-            rayHit.meanDistance = 0.0;
+            volumetricRay.meanDistance = 0.0;
 
             // Total distance that the ray must travel including empty spaces
             // Clamp the travel distance to whatever is closer
             // - Sky Occluder
             // - Volume end
             // - Far plane
-            float totalDistance = min(rayMarchRange.end, ray.maxRayLength) - rayMarchRange.start;
+            float totalDistance = min(rayMarchRange.end, cloudRay.maxRayLength) - rayMarchRange.start;
 
             // Evaluate our integration step
             float stepS = min(totalDistance / (float)_NumPrimarySteps, _MaxStepSize);
             totalDistance = stepS * _NumPrimarySteps;
 
             // Compute the environment lighting that is going to be used for the cloud evaluation
-            float3 rayMarchStartPS = ConvertToPS(ray.originWS) + rayMarchRange.start * ray.direction;
-            float3 rayMarchEndPS = rayMarchStartPS + totalDistance * ray.direction;
+            float3 rayMarchStartPS = ConvertToPS(cloudRay.originWS) + rayMarchRange.start * cloudRay.direction;
+            float3 rayMarchEndPS = rayMarchStartPS + totalDistance * cloudRay.direction;
 
             // Tracking the number of steps that have been made
             int currentIndex = 0;
@@ -70,8 +72,8 @@ RayHit TraceCloudsRay(Ray ray)
             float meanDistanceDivider = 0.0;
 
             // Current position for the evaluation, apply blue noise to start position
-            float currentDistance = ray.integrationNoise;
-            float3 currentPositionWS = ray.originWS + (rayMarchRange.start + currentDistance) * ray.direction;
+            float currentDistance = cloudRay.integrationNoise;
+            float3 currentPositionWS = cloudRay.originWS + (rayMarchRange.start + currentDistance) * cloudRay.direction;
 
             // Initialize the values for the optimized ray marching
             bool activeSampling = true;
@@ -85,15 +87,15 @@ RayHit TraceCloudsRay(Ray ray)
                 // Compute the mip offset for the erosion texture
                 float erosionMipOffset = ErosionMipOffset(rayMarchRange.start + currentDistance);
 
+                // Accumulate in WS and convert at each iteration to avoid precision issues
+                float3 currentPositionPS = ConvertToPS(currentPositionWS);
+
                 // Should we be evaluating the clouds or just doing the large ray marching
                 if (activeSampling)
                 {
-                    // Convert to planet space
-                    float3 positionPS = ConvertToPS(currentPositionWS);
-
                     // If the density is null, we can skip as there will be no contribution
                     CloudProperties properties;
-                    EvaluateCloudProperties(positionPS, 0.0, erosionMipOffset, false, false, properties);
+                    EvaluateCloudProperties(currentPositionPS, 0.0, erosionMipOffset, false, false, properties);
 
                     // Apply the fade in function to the density
                     properties.density *= densityAttenuationValue;
@@ -101,17 +103,17 @@ RayHit TraceCloudsRay(Ray ray)
                     if (properties.density > CLOUD_DENSITY_TRESHOLD)
                     {
                         // Contribute to the average depth (must be done first in case we end up inside a cloud at the next step)
-                        half transmitanceXdensity = rayHit.transmittance * properties.density;
-                        rayHit.meanDistance += (rayMarchRange.start + currentDistance) * transmitanceXdensity;
+                        half transmitanceXdensity = volumetricRay.transmittance * properties.density;
+                        volumetricRay.meanDistance += (rayMarchRange.start + currentDistance) * transmitanceXdensity;
                         meanDistanceDivider += transmitanceXdensity;
 
                         // Evaluate the cloud at the position
-                        EvaluateCloud(properties, ray.direction, currentPositionWS, rayMarchStartPS, rayMarchEndPS, stepS, currentDistance / totalDistance, rayHit);
+                        EvaluateCloud(properties, cloudRay.direction, currentPositionPS, stepS, currentDistance / totalDistance, volumetricRay);
 
                         // if most of the energy is absorbed, just leave.
-                        if (rayHit.transmittance < 0.003)
+                        if (volumetricRay.transmittance < 0.003)
                         {
-                            rayHit.transmittance = 0.0;
+                            volumetricRay.transmittance = 0.0;
                             break;
                         }
 
@@ -126,18 +128,15 @@ RayHit TraceCloudsRay(Ray ray)
                         activeSampling = false;
 
                     // Do the next step
-                    float relativeStepSize = lerp(ray.integrationNoise, 1.0, saturate(currentIndex));
-                    currentPositionWS += ray.direction * stepS * relativeStepSize;
+                    float relativeStepSize = lerp(cloudRay.integrationNoise, 1.0, saturate(currentIndex));
+                    currentPositionWS += cloudRay.direction * stepS * relativeStepSize;
                     currentDistance += stepS * relativeStepSize;
 
                 }
                 else
                 {
-                    // Convert to planet space
-                    float3 positionPS = ConvertToPS(currentPositionWS);
-
                     CloudProperties properties;
-                    EvaluateCloudProperties(positionPS, 1.0, 0.0, true, false, properties);
+                    EvaluateCloudProperties(currentPositionPS, 1.0, 0.0, true, false, properties);
 
                     // Apply the fade in function to the density
                     properties.density *= densityAttenuationValue;
@@ -145,14 +144,14 @@ RayHit TraceCloudsRay(Ray ray)
                     // If the density is lower than our tolerance,
                     if (properties.density < CLOUD_DENSITY_TRESHOLD)
                     {
-                        currentPositionWS += ray.direction * stepS * 2.0;
+                        currentPositionWS += cloudRay.direction * stepS * 2.0;
                         currentDistance += stepS * 2.0;
                     }
                     else
                     {
                         // Somewhere between this step and the previous clouds started
                         // We reset all the counters and enable active sampling
-                        currentPositionWS -= ray.direction * stepS;
+                        currentPositionWS -= cloudRay.direction * stepS;
                         currentDistance -= stepS;
                         currentIndex -= 1;
                         activeSampling = true;
@@ -163,16 +162,40 @@ RayHit TraceCloudsRay(Ray ray)
             }
 
             // Normalized the depth we computed
-            if (rayHit.meanDistance == 0.0)
-                rayHit.invalidRay = true;
-            else
+            if (volumetricRay.meanDistance != 0.0)
             {
-                rayHit.meanDistance /= meanDistanceDivider;
-                rayHit.invalidRay = false;
+                volumetricRay.invalidRay = false;
+                volumetricRay.meanDistance /= meanDistanceDivider;
+                volumetricRay.meanDistance = min(volumetricRay.meanDistance, cloudRay.maxRayLength);
+
+                float3 currentPositionPS = ConvertToPS(cloudRay.originWS) + volumetricRay.meanDistance * cloudRay.direction;
+                float relativeHeight = EvaluateNormalizedCloudHeight(currentPositionPS);
+
+                Light sun = GetMainLight();
+
+                // Evaluate the sun color at the position
+            #ifdef _PHYSICALLY_BASED_SUN
+                half3 sunColor = _SunColor * EvaluateSunColorAttenuation(currentPositionPS, sun.direction, true) * _SunLightDimmer; // _SunColor includes PI
+            #else
+                half3 sunColor = sun.color * PI * _SunLightDimmer;
+            #endif
+
+                // Evaluate the environement lighting contribution
+            #ifdef _CLOUDS_AMBIENT_PROBE
+                half3 ambientTermTop = SAMPLE_TEXTURECUBE_LOD(_VolumetricCloudsAmbientProbe, sampler_VolumetricCloudsAmbientProbe, half3(0.0, 1.0, 0.0), 4.0).rgb;
+                half3 ambientTermBottom = SAMPLE_TEXTURECUBE_LOD(_VolumetricCloudsAmbientProbe, sampler_VolumetricCloudsAmbientProbe, half3(0.0, -1.0, 0.0), 4.0).rgb;
+            #else
+                half3 ambientTermTop = EvaluateVolumetricCloudsAmbientProbe(half3(0.0, 1.0, 0.0));
+                half3 ambientTermBottom = EvaluateVolumetricCloudsAmbientProbe(half3(0.0, -1.0, 0.0));
+            #endif
+                half3 ambient = max(0, lerp(ambientTermBottom, ambientTermTop, relativeHeight) * _AmbientProbeDimmer);
+
+                volumetricRay.scattering = sunColor * volumetricRay.scattering;
+                volumetricRay.scattering += ambient * volumetricRay.ambient;
             }
         }
     }
-    return rayHit;
+    return volumetricRay;
 }
 
 #endif

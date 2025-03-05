@@ -105,6 +105,14 @@ class VolumetricCloudsEditor : VolumeComponentEditor
     const string k_RendererFeatureOffMessage = "\"Volumetric Clouds\" is disabled in the active URP renderer.";
     const string k_RenderingDebuggerMessage = "\"Volumetric Clouds\" is disabled to avoid affecting rendering debugging.";
 
+    const string k_LocalCloudsMessage = "The \"Local Clouds\" property is not available, please adjust the \"Rendering Space\" in \"Visual Environment\" override instead.";
+    const string k_EarthCurvatureMessage = "The \"Earth Curvature\" property is not available, please adjust the \"Planet Radius\" in \"Visual Environment\" override instead.";
+
+    const string k_CustomSkyShaderGraphMessage = "It looks like the \"Sky Material\" is using a shader graph. Please ensure that the \"Render Face\" setting is set to \"Both\".";
+
+    const string k_UniversalForward = "Universal Forward";
+    const string k_VISUAL_ENVIRONMENT_DYNAMIC_SKY = "VISUAL_ENVIRONMENT_DYNAMIC_SKY";
+
     static public readonly GUIContent k_PerceptualBlending = EditorGUIUtility.TrTextContent("Perceptual Blending", "When enabled, the clouds will blend in a perceptual way with the environment. This may cause artifacts when the sky is over-exposed.");
 
     const string k_FixButtonName = "Fix";
@@ -219,6 +227,14 @@ class VolumetricCloudsEditor : VolumeComponentEditor
             });
             EditorGUILayout.Space();
         }
+        else if (clouds.AmbientUpdateMode == VolumetricCloudsURP.CloudsAmbientMode.Dynamic && !Shader.IsKeywordEnabled(k_VISUAL_ENVIRONMENT_DYNAMIC_SKY))
+        {
+            if (RenderSettings.skybox.GetPassName(0) == k_UniversalForward)
+            {
+                EditorGUILayout.HelpBox(k_CustomSkyShaderGraphMessage, MessageType.Info, wide: true);
+
+            }
+        }
 
         bool showDebuggerMessage = DebugManager.instance.isAnyDebugUIActive && !clouds.RenderingDebugger;
         bool enableClouds = m_Enable.value.boolValue && m_Enable.overrideState.boolValue;
@@ -235,9 +251,23 @@ class VolumetricCloudsEditor : VolumeComponentEditor
         }
 
         PropertyField(m_Enable);
-        PropertyField(m_LocalClouds);
 
-        bool hasCloudMap = CloudsShapeUI();
+    #if URP_PBSKY
+        var stack = VolumeManager.instance.stack;
+        VisualEnvironment visualEnvVolume = stack.GetComponent<VisualEnvironment>();
+        bool hasVisualEnvVolume = visualEnvVolume != null && visualEnvVolume.IsActive() && visualEnvVolume.skyType.value != 0;
+
+        if (hasVisualEnvVolume) { EditorGUILayout.HelpBox(k_LocalCloudsMessage, MessageType.Info, wide: true); }
+        using (new EditorGUI.DisabledScope(hasVisualEnvVolume))
+        {
+            PropertyField(m_LocalClouds);
+        }
+    #else
+        bool hasVisualEnvVolume = false;
+        PropertyField(m_LocalClouds);
+    #endif
+
+        bool hasCloudMap = CloudsShapeUI(hasVisualEnvVolume);
 
         //DrawHeader("Wind");
         PropertyField(m_GlobalWindSpeed);
@@ -545,7 +575,7 @@ class VolumetricCloudsEditor : VolumeComponentEditor
         }
     }
 
-    bool CloudsShapeUI()
+    bool CloudsShapeUI(bool hasVisualEnvVolume)
     {
         //EditorGUILayout.LabelField("Shape", EditorStyles.miniLabel);
 
@@ -575,7 +605,16 @@ class VolumetricCloudsEditor : VolumeComponentEditor
 
         // Additional properties
         PropertyField(m_ShapeOffset);
+
+    #if URP_PBSKY
+        if (hasVisualEnvVolume) { EditorGUILayout.HelpBox(k_EarthCurvatureMessage, MessageType.Info, wide: true);}
+        using (new EditorGUI.DisabledScope(hasVisualEnvVolume))
+        {
+            PropertyField(m_EarthCurvature);
+        }
+    #else
         PropertyField(m_EarthCurvature);
+    #endif
 
         // For the other sections
         return hasCloudMap;

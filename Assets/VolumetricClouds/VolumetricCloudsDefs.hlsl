@@ -38,8 +38,21 @@ half _NormalizationFactor;
 half _CloudNearPlane;
 CBUFFER_END
 
-half _ImprovedTransmittanceBlend;
+// Ambient Probe (unity_SH)
+half4 clouds_SHAr;
+half4 clouds_SHAg;
+half4 clouds_SHAb;
+half4 clouds_SHBr;
+half4 clouds_SHBg;
+half4 clouds_SHBb;
+half4 clouds_SHC;
 
+half _ImprovedTransmittanceBlend;
+float _PostExposure; // Exposure from the ColorAdjustments override
 half3 _SunColor;
+
+#ifndef URP_PHYSICALLY_BASED_SKY_DEFINES_INCLUDED
+float4 _PlanetCenterRadius;
+#endif
 
 #endif
