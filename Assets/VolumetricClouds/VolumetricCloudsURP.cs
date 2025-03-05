@@ -978,7 +978,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             CommandBuffer cmd = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
 
             // Clouds Upscale & Combine
-            Blitter.BlitCameraTexture(cmd, data.cloudsColorHandle, data.cameraColorHandle, , RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, data.cloudsMaterial, pass: data.hasAtmosphericScattering ? 7 : 1);
+            Blitter.BlitCameraTexture(cmd, data.cloudsColorHandle, data.cameraColorHandle, RenderBufferLoadAction.Load, RenderBufferStoreAction.Store, data.cloudsMaterial, pass: data.hasAtmosphericScattering ? 7 : 1);
 
             if (data.outputToSceneDepth)
             {
