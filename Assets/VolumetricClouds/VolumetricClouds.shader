@@ -71,7 +71,7 @@ Shader "Hidden/Sky/VolumetricClouds"
             // The Blit.hlsl file provides the output structure (Varyings)
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 			
-            #pragma vertex vert
+            #pragma vertex Vert
             #pragma fragment frag
 
             #pragma target 3.5
@@ -97,40 +97,11 @@ Shader "Hidden/Sky/VolumetricClouds"
             #include "./VolumetricClouds.hlsl"
 
             #define RAW_FAR_CLIP_THRESHOLD 1e-6
-
-            struct CustomVaryings
-            {
-                float4 positionCS : SV_POSITION;
-                float2 texcoord : TEXCOORD0;
-                float3 positionWS : TEXCOORD1;
-                UNITY_VERTEX_OUTPUT_STEREO
-            };
-
-            CustomVaryings vert(Attributes input)
-            {
-                CustomVaryings output;
-                UNITY_SETUP_INSTANCE_ID(input);
-                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
-
-                float4 pos = GetFullScreenTriangleVertexPosition(input.vertexID);
-                float2 uv = GetFullScreenTriangleTexCoord(input.vertexID);
-
-                output.positionCS = pos;
-            #if UNITY_VERSION < 202320
-                output.texcoord = uv * _BlitScaleBias.xy + _BlitScaleBias.zw;
-            #else
-                output.texcoord = DYNAMIC_SCALING_APPLY_SCALEBIAS(uv);
-            #endif
-                // Calculate the virtual position of skybox for view direction calculation
-                output.positionWS = ComputeWorldSpacePosition(output.texcoord, UNITY_RAW_FAR_CLIP_VALUE, UNITY_MATRIX_I_VP);
-
-                return output;
-            }
             
         #if defined(_OUTPUT_CLOUDS_DEPTH)
-            void frag(CustomVaryings input, out half4 cloudsColor : SV_Target0, out float cloudsDepth : SV_Target1)
+            void frag(Varyings input, out half4 cloudsColor : SV_Target0, out float cloudsDepth : SV_Target1)
         #else
-            void frag(CustomVaryings input, out half4 cloudsColor : SV_Target)
+            void frag(Varyings input, out half4 cloudsColor : SV_Target)
         #endif
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
@@ -160,7 +131,8 @@ Shader "Hidden/Sky/VolumetricClouds"
             #endif
 
                 // Calculate the virtual position of skybox for view direction calculation
-                half3 invViewDirWS = normalize(input.positionWS - GetCameraPositionWS());
+                float3 positionWS = ComputeWorldSpacePosition(screenUV, UNITY_RAW_FAR_CLIP_VALUE, UNITY_MATRIX_I_VP);
+                half3 invViewDirWS = normalize(positionWS - GetCameraPositionWS());
 
                 CloudRay cloudRay = BuildCloudsRay(screenUV, depth, invViewDirWS, isOccluded);
 
@@ -529,7 +501,7 @@ Shader "Hidden/Sky/VolumetricClouds"
 
             #pragma target 3.5
 
-            TEXTURE2D_X(_VolumetricCloudsDepthTexture);
+            TEXTURE2D_X_FLOAT(_VolumetricCloudsDepthTexture);
             float4 _VolumetricCloudsDepthTexture_TexelSize;
 
             // URP pre-defined the following variable on 2023.2+.
@@ -735,6 +707,7 @@ Shader "Hidden/Sky/VolumetricClouds"
                 output.texcoord = DYNAMIC_SCALING_APPLY_SCALEBIAS(uv);
             #endif
                 // Calculate the virtual position of skybox for view direction calculation
+                // Note: The sky reflection probe is always located at the origin, so it should not cause jitter issues
                 output.positionWS = ComputeWorldSpacePosition(output.texcoord, UNITY_RAW_FAR_CLIP_VALUE, UNITY_MATRIX_I_VP);
 
                 return output;

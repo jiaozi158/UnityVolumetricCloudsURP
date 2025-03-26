@@ -229,7 +229,7 @@ class VolumetricCloudsEditor : VolumeComponentEditor
         }
         else if (clouds.AmbientUpdateMode == VolumetricCloudsURP.CloudsAmbientMode.Dynamic && !Shader.IsKeywordEnabled(k_VISUAL_ENVIRONMENT_DYNAMIC_SKY))
         {
-            if (RenderSettings.skybox.GetPassName(0) == k_UniversalForward)
+            if (RenderSettings.skybox != null && RenderSettings.skybox.GetPassName(0) == k_UniversalForward)
             {
                 EditorGUILayout.HelpBox(k_CustomSkyShaderGraphMessage, MessageType.Info, wide: true);
 
