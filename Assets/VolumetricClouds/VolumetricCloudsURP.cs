@@ -26,7 +26,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
     [SerializeField] private bool renderingDebugger = false;
 
     [Header("Performance")]
-    [Tooltip("Specifies if URP renders volumetric clouds in both real-time and baked reflection probes. \nVolumetric clouds in real-time reflection probes may reduce performace.")]
+    [Tooltip("Specifies if URP renders volumetric clouds in both real-time and baked reflection probes. \nVolumetric clouds in real-time reflection probes may reduce performance.")]
     [SerializeField] private bool reflectionProbe = false;
     [Range(0.25f, 1.0f), Tooltip("The resolution scale for volumetric clouds rendering.")]
     [SerializeField] private float resolutionScale = 0.5f;
@@ -1966,8 +1966,12 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             if (targetLight != null)
             {
                 targetLight.cookie = null;
-                targetLight.GetComponent<UniversalAdditionalLightData>().lightCookieSize = Vector2.one;
-                targetLight.GetComponent<UniversalAdditionalLightData>().lightCookieOffset = Vector2.zero;
+                UniversalAdditionalLightData additionalData = targetLight.GetComponent<UniversalAdditionalLightData>();
+                if (additionalData != null)
+                {
+                    additionalData.lightCookieSize = Vector2.one;
+                    additionalData.lightCookieOffset = Vector2.zero;
+                }
             }
         }
 
