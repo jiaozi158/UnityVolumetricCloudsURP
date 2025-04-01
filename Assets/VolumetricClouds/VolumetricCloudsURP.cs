@@ -292,6 +292,14 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             return;
         }
 
+    #if UNITY_EDITOR
+        bool isEditingPrefab = UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage() != null;
+        bool isSceneViewFocused = UnityEditor.SceneView.lastActiveSceneView != null && UnityEditor.SceneView.lastActiveSceneView.hasFocus;
+        // Disable Volumetric Clouds when entering prefab mode.
+        if (isEditingPrefab && isSceneViewFocused)
+            return;
+    #endif
+
         var stack = VolumeManager.instance.stack;
         VolumetricClouds cloudsVolume = stack.GetComponent<VolumetricClouds>();
         ColorAdjustments colorAdjustments = stack.GetComponent<ColorAdjustments>();
@@ -783,7 +791,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             {
                 VisibleLight shadowLight = lightData.visibleLights[shadowLightIndex];
                 Light light = shadowLight.light;
-                if ((light.shadows != LightShadows.None || !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
+                if ((light.shadows != LightShadows.None || RenderSettings.sun != null && !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
                     return light;
             }
 
@@ -929,7 +937,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             {
                 VisibleLight shadowLight = lightData.visibleLights[shadowLightIndex];
                 Light light = shadowLight.light;
-                if ((light.shadows != LightShadows.None || !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
+                if ((light.shadows != LightShadows.None || RenderSettings.sun != null && !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
                     return light;
             }
 
@@ -1522,7 +1530,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             {
                 VisibleLight shadowLight = lightData.visibleLights[shadowLightIndex];
                 Light light = shadowLight.light;
-                if ((light.shadows != LightShadows.None || !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
+                if ((light.shadows != LightShadows.None || RenderSettings.sun != null && !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
                     return light;
             }
 
@@ -1712,7 +1720,7 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
             {
                 VisibleLight shadowLight = lightData.visibleLights[shadowLightIndex];
                 Light light = shadowLight.light;
-                if ((light.shadows != LightShadows.None || !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
+                if ((light.shadows != LightShadows.None || RenderSettings.sun != null && !RenderSettings.sun.isActiveAndEnabled) && shadowLight.lightType == LightType.Directional)
                     return light;
             }
 
