@@ -39,6 +39,7 @@ Reminders
 - Some settings are still WIP, such as **Custom Cloud Map** overrides.
 - Orthographic camera is not supported.
 - To render volumetric clouds shadows, it will override the cookie in the main directional light.
+- To customize the **planet radius and center** for volumetric clouds, install [Physically Based Sky](https://github.com/jiaozi158/UnityPhysicallyBasedSkyURP) via the package manager.
  
 License
 ------------

@@ -561,6 +561,9 @@ Shader "Hidden/Sky/VolumetricClouds"
             float4 _BlitTexture_TexelSize;
         #endif
 
+            // "_ScreenSize" that supports dynamic resolution
+            float4 _ScreenResolution;
+
             SAMPLER(s_point_clamp_sampler);
 
         #ifndef PHYSICALLY_BASED_SKY
@@ -615,7 +618,7 @@ Shader "Hidden/Sky/VolumetricClouds"
                     float depth = cloudsColor.a == 1.0 ? UNITY_RAW_FAR_CLIP_VALUE : CLOUDS_RAW_FAR_CLIP_VALUE;
                 #endif
 
-                    PositionInputs posInput = GetPositionInput(input.positionCS.xy, _ScreenSize.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V);
+                    PositionInputs posInput = GetPositionInput(input.positionCS.xy, _ScreenResolution.zw, depth, UNITY_MATRIX_I_VP, UNITY_MATRIX_V);
 
                     half3 V = normalize(GetCameraPositionWS() - posInput.positionWS);
 
@@ -661,6 +664,9 @@ Shader "Hidden/Sky/VolumetricClouds"
             SAMPLER(s_linear_repeat_sampler);
             SAMPLER(s_trilinear_repeat_sampler);
             SAMPLER(sampler_VolumetricCloudsAmbientProbe);
+
+            // Note: This pass doesn't need to support dynamic resolution
+            //float4 _ScreenResolution;
 
             #pragma multi_compile_local_fragment _ _CLOUDS_MICRO_EROSION
             #pragma multi_compile_local_fragment _ _LOCAL_VOLUMETRIC_CLOUDS

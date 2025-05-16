@@ -657,7 +657,16 @@ public class VolumetricCloudsURP : ScriptableRendererFeature
                 bool isLinearColorSpace = QualitySettings.activeColorSpace == ColorSpace.Linear;
                 Color mainLightColor = Color.black;
                 if (mainLight != null)
-                    mainLightColor = (isLinearColorSpace ? mainLight.color.linear : mainLight.color.gamma) * (mainLight.useColorTemperature ? Mathf.CorrelatedColorTemperatureToRGB(mainLight.colorTemperature) : Color.white) * mainLight.intensity * PI;
+                    mainLightColor = (isLinearColorSpace ? mainLight.color.linear : mainLight.color.gamma) * (mainLight.useColorTemperature ? Mathf.CorrelatedColorTemperatureToRGB(mainLight.colorTemperature) : Color.white) * mainLight.intensity;
+
+            #if URP_PHYSICAL_LIGHT
+                bool isPhysicalLight = mainLight.GetComponent<AdditionalLightData>() != null;
+
+                mainLightColor = isPhysicalLight ? mainLightColor : mainLightColor * PI;
+            #else
+                mainLightColor *= PI;
+            #endif
+
                 // Pass the actual main light color to volumetric clouds shader.
                 cloudsMaterial.SetVector(sunColor, mainLightColor);
             }
